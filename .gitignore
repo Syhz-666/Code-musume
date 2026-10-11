@@ -5,6 +5,7 @@ node_modules/
 dist/
 src-tauri/target/
 /target/
+coverage/
 
 # Tauri 生成物（含中间斜杠的 pattern 会被锚定，需 ** 通配深度）
 **/gen/schemas/

@@ -31,12 +31,20 @@ export interface Envelope {
 /** 信封大小上限（截断 + parseError.kind="size"，仍发送）。 */
 export const ENVELOPE_MAX_PAYLOAD_BYTES = 64 * 1024;
 
-/** 校验并解析信封；不合法返回 null（调用方按「畸形」处理，不抛异常）。 */
+/**
+ * 校验并解析信封；不合法返回 null（调用方按「畸形」处理，不抛异常）。
+ *
+ * 分层契约（测试已锁定）：本函数**不做版本校验**（`v` 只要求有限数——版本判断
+ * 是调用方 ingest 的责任，见 `isProtocolVersionSupported`）；`ts` 只要求有限数、
+ * 不校验整数（宽松行为由测试显式记录）。
+ * 空 `payload` 是**合法**的（协议 §5.3：空 / 非 JSON → adapter 降级为 kind="unknown"，
+ * 不得在信封层整条丢弃——CLI 读流失败时 payload 为空串）。
+ */
 export function parseEnvelope(input: unknown): Envelope | null {
   if (!isRecord(input)) return null;
   if (!isFiniteNumber(input.v)) return null;
   if (!isNonEmptyString(input.agent) || !isNonEmptyString(input.event)) return null;
-  if (!isFiniteNumber(input.ts) || !isNonEmptyString(input.payload)) return null;
+  if (!isFiniteNumber(input.ts) || typeof input.payload !== "string") return null;
   const src = input.src;
   if (!isRecord(src) || !isNonEmptyString(src.cli) || !isFiniteNumber(src.pid)) return null;
 
