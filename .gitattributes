@@ -1,0 +1,2 @@
+# 行尾统一为 LF（仓库与工作区一致；覆盖本机 core.autocrlf）
+* text=auto eol=lf

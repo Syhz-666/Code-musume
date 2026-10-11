@@ -1,0 +1,25 @@
+# 依赖
+node_modules/
+
+# 构建产物
+dist/
+src-tauri/target/
+
+# 编辑器 / IDE
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# 环境变量
+.env
+.env.*
+!.env.example
+
+# 日志 / 临时文件
+*.log
+*.tmp
+
+# 操作系统
+Thumbs.db
+Desktop.ini
+.DS_Store
