@@ -1,0 +1,19 @@
+[package]
+name = "pet"
+version = "0.0.0"
+edition = "2021"
+description = "代码娘桌宠应用（M1 骨架）"
+
+[lib]
+name = "pet_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# 钉在 2.12.x：with_webview 的 webview2-com 依赖会随 tauri minor 版本变动（P13）
+tauri = { version = "~2.12", features = ["tray-icon"] }
+tauri-plugin-single-instance = "2"
+serde = { workspace = true }
+serde_json = { workspace = true }

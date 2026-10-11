@@ -1,0 +1,13 @@
+[package]
+name = "code-musume-hook"
+version = "0.0.0"
+edition = "2021"
+description = "代码娘 hook CLI（哑管道）——永远 exit 0、不写 stdout、不做决策"
+
+[[bin]]
+name = "code-musume-hook"
+path = "src/main.rs"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }

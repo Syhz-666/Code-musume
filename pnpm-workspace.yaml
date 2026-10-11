@@ -1,0 +1,23 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+
+# pnpm 11：构建脚本白名单（取代 onlyBuiltDependencies；strictDepBuilds 默认 true，
+# 未批准的包会让 pnpm install 直接失败 ERR_PNPM_IGNORED_BUILDS）
+allowBuilds:
+  esbuild: true
+
+minimumReleaseAgeExclude:
+  - '@tauri-apps/api@2.12.3'
+  - '@tauri-apps/cli-darwin-arm64@2.12.2'
+  - '@tauri-apps/cli-darwin-x64@2.12.2'
+  - '@tauri-apps/cli-linux-arm-gnueabihf@2.12.2'
+  - '@tauri-apps/cli-linux-arm64-gnu@2.12.2'
+  - '@tauri-apps/cli-linux-arm64-musl@2.12.2'
+  - '@tauri-apps/cli-linux-riscv64-gnu@2.12.2'
+  - '@tauri-apps/cli-linux-x64-gnu@2.12.2'
+  - '@tauri-apps/cli-linux-x64-musl@2.12.2'
+  - '@tauri-apps/cli-win32-arm64-msvc@2.12.2'
+  - '@tauri-apps/cli-win32-ia32-msvc@2.12.2'
+  - '@tauri-apps/cli-win32-x64-msvc@2.12.2'
+  - '@tauri-apps/cli@2.12.2'

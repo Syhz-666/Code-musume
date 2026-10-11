@@ -1,0 +1,41 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "code-musume",
+  "version": "0.0.0",
+  "identifier": "dev.code-musume.pet",
+  "build": {
+    "beforeDevCommand": { "script": "pnpm dev", "cwd": ".." },
+    "beforeBuildCommand": { "script": "pnpm build", "cwd": ".." },
+    "devUrl": "http://localhost:5173",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "pet",
+        "title": "代码娘",
+        "width": 320,
+        "height": 360,
+        "transparent": true,
+        "decorations": false,
+        "shadow": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "focus": false,
+        "focusable": false,
+        "noRedirectionBitmap": true,
+        "resizable": false,
+        "visible": false,
+        "dragDropEnabled": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "icon": ["icons/icon.ico"]
+  }
+}
