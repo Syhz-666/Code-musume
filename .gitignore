@@ -6,8 +6,8 @@ dist/
 src-tauri/target/
 /target/
 
-# Tauri 生成物
-gen/schemas/
+# Tauri 生成物（含中间斜杠的 pattern 会被锚定，需 ** 通配深度）
+**/gen/schemas/
 
 # 编辑器 / IDE
 .vscode/*
