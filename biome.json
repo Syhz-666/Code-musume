@@ -8,7 +8,10 @@
       "!**/node_modules",
       "!**/gen",
       "!**/coverage",
-      "!pnpm-lock.yaml"
+      "!**/.test-artifacts",
+      "!**/artifacts",
+      "!pnpm-lock.yaml",
+      "!**/generated.ts"
     ]
   },
   "formatter": {

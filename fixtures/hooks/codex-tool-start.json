@@ -1,0 +1,8 @@
+{
+  "hook_event_name": "PreToolUse",
+  "session_id": "fixture-codex",
+  "turn_id": "fixture-turn",
+  "tool_use_id": "fixture-tool",
+  "tool_name": "exec_command",
+  "tool_input": { "cmd": "echo fixture" }
+}

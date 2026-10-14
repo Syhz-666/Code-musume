@@ -29,4 +29,6 @@ tmp-shots/
 # 操作系统
 Thumbs.db
 Desktop.ini
+.test-artifacts/
+/artifacts/
 .DS_Store

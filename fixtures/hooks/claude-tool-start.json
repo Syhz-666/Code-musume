@@ -1,0 +1,8 @@
+{
+  "hook_event_name": "PreToolUse",
+  "session_id": "fixture-claude",
+  "prompt_id": "fixture-prompt",
+  "tool_use_id": "fixture-tool",
+  "tool_name": "Bash",
+  "tool_input": { "command": "echo fixture" }
+}

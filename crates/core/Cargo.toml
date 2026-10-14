@@ -1,0 +1,9 @@
+[package]
+name = "code-musume-core"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+code-musume-contracts = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }

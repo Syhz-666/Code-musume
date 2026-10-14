@@ -1,0 +1,131 @@
+.character {
+  position: absolute;
+  width: 160px;
+  height: 166px;
+  bottom: 8px;
+  left: 0;
+  cursor: grab;
+  touch-action: none;
+}
+.character:active {
+  cursor: grabbing;
+}
+.bubble {
+  position: absolute;
+  top: 6px;
+  left: 8px;
+  right: 8px;
+  padding: 9px 5px;
+  border: 1px solid #dedce8;
+  border-radius: 14px;
+  background: #fffffff5;
+  color: #454055;
+  font:
+    12px system-ui,
+    sans-serif;
+  text-align: center;
+  opacity: 0;
+  transition: opacity 0.18s;
+  pointer-events: none;
+}
+.bubble.shown {
+  opacity: 1;
+}
+.agent-label {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  font:
+    10px system-ui,
+    sans-serif;
+  text-align: center;
+  letter-spacing: 2px;
+  color: #746786;
+  pointer-events: none;
+}
+.settings-button {
+  position: absolute;
+  right: 4px;
+  bottom: 0;
+  border: 0;
+  border-radius: 8px;
+  padding: 2px 5px;
+  background: #ffffffcf;
+  color: #756986;
+  cursor: pointer;
+  font-size: 12px;
+}
+.settings-button:hover {
+  background: #fff;
+}
+.dom-pet {
+  position: absolute;
+  left: 32px;
+  top: 36px;
+  width: 96px;
+  height: 96px;
+  border: 2px solid #546174;
+  background: var(--pet-color, #b9dce7);
+  border-radius: 50%;
+  box-sizing: border-box;
+}
+.ear {
+  position: absolute;
+  top: -25px;
+  width: 28px;
+  height: 46px;
+  border-radius: 50%;
+  background: var(--pet-color, #b9dce7);
+  z-index: -1;
+}
+.ear.left {
+  left: 0;
+  transform: rotate(-20deg);
+}
+.ear.right {
+  right: 0;
+  transform: rotate(20deg);
+}
+.face {
+  position: absolute;
+  inset: 32px 24px;
+  display: flex;
+  justify-content: space-between;
+}
+.face i {
+  display: block;
+  width: 7px;
+  height: 14px;
+  background: #303447;
+  border-radius: 50%;
+}
+.face span {
+  position: absolute;
+  top: 14px;
+  left: 10px;
+  color: #655067;
+  font: 19px system-ui;
+}
+.bow {
+  position: absolute;
+  right: -6px;
+  top: 2px;
+  color: #fff;
+}
+.character[data-state="sleeping"] .face i {
+  height: 2px;
+  margin-top: 7px;
+}
+.dom-sprite {
+  display: none;
+  position: absolute;
+  left: 8px;
+  top: 7px;
+  background-repeat: no-repeat;
+}
+@media (prefers-reduced-motion: reduce) {
+  .bubble {
+    transition: none;
+  }
+}

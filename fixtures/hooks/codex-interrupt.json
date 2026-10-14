@@ -1,0 +1,5 @@
+{
+  "hook_event_name": "Interrupt",
+  "session_id": "fixture-codex",
+  "turn_id": "fixture-turn"
+}

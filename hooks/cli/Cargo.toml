@@ -1,6 +1,6 @@
 [package]
 name = "code-musume-hook"
-version = "0.0.0"
+version = "0.1.0"
 edition = "2021"
 description = "代码娘 hook CLI（哑管道）——永远 exit 0、不写 stdout、不做决策"
 
@@ -11,3 +11,9 @@ path = "src/main.rs"
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
+code-musume-contracts = { workspace = true }
+uuid = { workspace = true }
+sha2 = { workspace = true }
+ureq = { version = "3.4", default-features = false }
+toml_edit = { version = "0.25", features = ["serde"] }
+base64 = "0.22"

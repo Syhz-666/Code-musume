@@ -1,0 +1,16 @@
+{
+  "bundle": {
+    "useLocalToolsDir": true,
+    "resources": {
+      "../../../target/release/code-musume-hook.exe": "code-musume-hook.exe",
+      "../../../docs/使用说明-2026-10-14.md": "使用说明.md"
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": ["SimpChinese", "English"],
+        "installerHooks": "windows/installer-hooks.nsh"
+      }
+    }
+  }
+}

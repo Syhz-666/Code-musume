@@ -1,0 +1,28 @@
+{
+  "renderer": "pixi",
+  "appVersion": "0.1.0",
+  "includesWebViewChildProcesses": true,
+  "character": "builtin",
+  "date": "2026-10-14",
+  "notes": [
+    "CPU normalized by processor count; sleeping samples excluded from idle mean.",
+    "Working FPS is a short renderer-reported sample, not a full-day test.",
+    "External character packs still require their own workload measurement."
+  ],
+  "working": {
+    "profile": "debug",
+    "sampleCount": 12,
+    "meanRenderedFps": 59.3102588074089,
+    "peakPrivateWorkingSetMiB": 148.359375,
+    "durationSeconds": 30
+  },
+  "idle": {
+    "sampleCount": 220,
+    "profile": "release",
+    "peakPrivateWorkingSetMiB": 114.57421875,
+    "durationSeconds": 600,
+    "meanCpuPercent": 0.6945024011853391,
+    "states": ["idle", "sleeping"]
+  },
+  "dpiScale": 1.25
+}

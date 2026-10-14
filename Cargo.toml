@@ -1,9 +1,13 @@
 [workspace]
 resolver = "2"
-members = ["apps/pet/src-tauri", "hooks/cli"]
+members = ["apps/pet/src-tauri", "hooks/cli", "crates/contracts", "crates/core"]
 # 根目录 `cargo build` 只构建桌宠应用；CLI 用 -p code-musume-hook 显式构建
 default-members = ["apps/pet/src-tauri"]
 
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
+code-musume-contracts = { path = "crates/contracts" }
+code-musume-core = { path = "crates/core" }
+uuid = { version = "1.28", features = ["v4"] }
+sha2 = "0.10"

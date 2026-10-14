@@ -10,7 +10,10 @@
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck",
     "lint": "biome check .",
-    "format": "biome format --write ."
+    "format": "biome format --write .",
+    "contracts:generate": "cargo run -p code-musume-contracts --features bindings --bin export-bindings",
+    "verify": "pnpm typecheck && pnpm test && pnpm lint && cargo test --workspace && cargo clippy --workspace --all-targets -- -D warnings",
+    "package:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/package-windows.ps1"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.15"

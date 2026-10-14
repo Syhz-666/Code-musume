@@ -1,0 +1,23 @@
+name: verify
+on: [push, pull_request]
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: cargo fmt --all --check
+      - run: pnpm contracts:generate
+      - run: git diff --exit-code -- packages/protocol/src/generated.ts
+      - run: pnpm verify
+      - run: pnpm build
+      - run: cargo build --workspace
+      - run: powershell -NoProfile -File tools/smoke.ps1

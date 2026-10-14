@@ -1,0 +1,160 @@
+{
+  "agentVersion": "2.1.295",
+  "provenance": "real-redacted",
+  "runtime": "Claude Code on Windows, configured DeepSeek API",
+  "note": "Captured from an isolated read-only fixture session through installed hooks. Sensitive content removed; these partial payloads are not full replay fixtures.",
+  "events": [
+    {
+      "receivedAt": "2026-10-14T14:30:47.1389427Z",
+      "agent": "claude-code",
+      "src": {
+        "cli": "0.1.0",
+        "pid": 23528
+      },
+      "redactedFields": [
+        "prompt",
+        "cwd",
+        "transcript_path",
+        "tool_input",
+        "tool_response",
+        "message",
+        "last_assistant_message"
+      ],
+      "payload": {
+        "prompt_id": null,
+        "tool_name": null,
+        "hasToolResponse": false,
+        "turn_id": null,
+        "session_id": "62ebb9ae-b410-434a-9b9a-48d42e0fe3f2",
+        "hook_event_name": "SessionStart",
+        "hasToolInput": false,
+        "agent_id": null,
+        "tool_use_id": null
+      },
+      "event": "SessionStart",
+      "capturedFromRealSession": true
+    },
+    {
+      "receivedAt": "2026-10-14T14:30:47.1970033Z",
+      "agent": "claude-code",
+      "src": {
+        "cli": "0.1.0",
+        "pid": 17860
+      },
+      "redactedFields": [
+        "prompt",
+        "cwd",
+        "transcript_path",
+        "tool_input",
+        "tool_response",
+        "message",
+        "last_assistant_message"
+      ],
+      "payload": {
+        "prompt_id": "699153f6-72bf-4ed5-b5a5-7c74ed5d380c",
+        "tool_name": null,
+        "hasToolResponse": false,
+        "turn_id": null,
+        "session_id": "62ebb9ae-b410-434a-9b9a-48d42e0fe3f2",
+        "hook_event_name": "UserPromptSubmit",
+        "hasToolInput": false,
+        "agent_id": null,
+        "tool_use_id": null
+      },
+      "event": "UserPromptSubmit",
+      "capturedFromRealSession": true
+    },
+    {
+      "receivedAt": "2026-10-14T14:30:49.9818181Z",
+      "agent": "claude-code",
+      "src": {
+        "cli": "0.1.0",
+        "pid": 27688
+      },
+      "redactedFields": [
+        "prompt",
+        "cwd",
+        "transcript_path",
+        "tool_input",
+        "tool_response",
+        "message",
+        "last_assistant_message"
+      ],
+      "payload": {
+        "prompt_id": "699153f6-72bf-4ed5-b5a5-7c74ed5d380c",
+        "tool_name": "Read",
+        "hasToolResponse": false,
+        "turn_id": null,
+        "session_id": "62ebb9ae-b410-434a-9b9a-48d42e0fe3f2",
+        "hook_event_name": "PreToolUse",
+        "hasToolInput": true,
+        "agent_id": null,
+        "tool_use_id": "call_00_BtNLo4lWipJid42KEddf9006"
+      },
+      "event": "PreToolUse",
+      "capturedFromRealSession": true
+    },
+    {
+      "receivedAt": "2026-10-14T14:30:50.0113321Z",
+      "agent": "claude-code",
+      "src": {
+        "cli": "0.1.0",
+        "pid": 25392
+      },
+      "redactedFields": [
+        "prompt",
+        "cwd",
+        "transcript_path",
+        "tool_input",
+        "tool_response",
+        "message",
+        "last_assistant_message"
+      ],
+      "payload": {
+        "prompt_id": "699153f6-72bf-4ed5-b5a5-7c74ed5d380c",
+        "tool_name": "Read",
+        "hasToolResponse": true,
+        "turn_id": null,
+        "session_id": "62ebb9ae-b410-434a-9b9a-48d42e0fe3f2",
+        "hook_event_name": "PostToolUse",
+        "hasToolInput": true,
+        "agent_id": null,
+        "tool_use_id": "call_00_BtNLo4lWipJid42KEddf9006"
+      },
+      "event": "PostToolUse",
+      "capturedFromRealSession": true
+    },
+    {
+      "receivedAt": "2026-10-14T14:30:50.9966565Z",
+      "agent": "claude-code",
+      "src": {
+        "cli": "0.1.0",
+        "pid": 7916
+      },
+      "redactedFields": [
+        "prompt",
+        "cwd",
+        "transcript_path",
+        "tool_input",
+        "tool_response",
+        "message",
+        "last_assistant_message"
+      ],
+      "payload": {
+        "prompt_id": "699153f6-72bf-4ed5-b5a5-7c74ed5d380c",
+        "tool_name": null,
+        "hasToolResponse": false,
+        "turn_id": null,
+        "session_id": "62ebb9ae-b410-434a-9b9a-48d42e0fe3f2",
+        "hook_event_name": "Stop",
+        "hasToolInput": false,
+        "agent_id": null,
+        "tool_use_id": null
+      },
+      "event": "Stop",
+      "capturedFromRealSession": true
+    }
+  ],
+  "capturedFromRealSession": true,
+  "referenceDate": "2026-10-14"
+}

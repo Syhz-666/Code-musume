@@ -1,0 +1,19 @@
+// Generated from Rust contracts. Run pnpm contracts:generate; do not edit.
+export const PROTOCOL_VERSION = 2;
+export type Agent = "claude-code" | "codex";
+export type EnvelopeSrc = { cli: string, pid: number, };
+export type ParseError = { kind: string, };
+export type EnvelopeV2 = { v: number, id: string, agent: Agent, event: string, ts: number, src: EnvelopeSrc, payload: string, parseError: ParseError | null, };
+export type DisplayState = "waiting-permission" | "error" | "done" | "notification" | "working" | "thinking" | "idle" | "sleeping";
+export type Certainty = "observed" | "stale" | "unknown";
+export type AgentCapabilities = { agent: Agent, turnIdentity: string, interrupt: boolean, turnFailure: boolean, notification: boolean, toolActorIdentity: boolean, };
+export type SessionSummary = { label: string, agent: Agent, state: DisplayState, certainty: Certainty, pendingCount: number, };
+export type Projection = { v: number, instanceId: string, revision: number, state: DisplayState, certainty: Certainty, dominantAgent: Agent | null, sessionLabel: string | null, pendingCount: number, activeSessions: number, formId: string, characterId: string, bubbleKey: string | null, intensity: number, missedEvents: number, sessions: Array<SessionSummary>, capabilities: Array<AgentCapabilities>, };
+export type Position = { monitorId: string, xPhys: number, yPhys: number, };
+export type Config = { schemaVersion: number, characterId: string, formLock: string | null, agentForms: { [key in string]: string }, ghost: boolean, userHidden: boolean, reducedMotion: boolean, fullscreenHide: boolean, autostart: boolean, renderer: string, position: Position | null, };
+export type Diagnostic = { seq: number, agent: Agent | null, event: string, sessionLabel: string | null, outcome: string, };
+export type Clip = { row: number, frames: number, fps: number, looping: boolean, };
+export type CharacterForm = { id: string, image: string, cellWidth: number, cellHeight: number, columns: number, clips: { [key in string]: Clip }, lookRows: boolean, };
+export type CharacterManifest = { schemaVersion: number, id: string, name: string, defaultForm: string, agentForms: { [key in string]: string }, forms: Array<CharacterForm>, license: string | null, };
+export type InstallPreview = { agent: Agent, operation: string, target: string, digest: string, changes: string, warnings: Array<string>, changed: boolean, };
+export type HookStatus = { agent: Agent, target: string, installed: boolean, needsTrust: boolean, runtime: string, };
