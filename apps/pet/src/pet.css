@@ -44,9 +44,9 @@
   color: #746786;
   pointer-events: none;
 }
-.settings-button {
+.settings-button,
+.exit-button {
   position: absolute;
-  right: 4px;
   bottom: 0;
   border: 0;
   border-radius: 8px;
@@ -56,8 +56,23 @@
   cursor: pointer;
   font-size: 12px;
 }
-.settings-button:hover {
+.settings-button {
+  right: 4px;
+}
+.exit-button {
+  left: 4px;
+  min-height: 24px;
+}
+.settings-button:hover,
+.exit-button:hover {
   background: #fff;
+}
+.exit-button:hover {
+  color: #9b4545;
+}
+.exit-button:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 .dom-pet {
   position: absolute;

@@ -1,0 +1,103 @@
+{
+  "schemaVersion": 1,
+  "id": "notification-returns-to-work",
+  "description": "普通通知四秒结束，重复通知不会延期。",
+  "provenance": "synthetic",
+  "sourceVersions": {
+    "claude-code": "2.1.295"
+  },
+  "steps": [
+    {
+      "atMs": 0,
+      "action": {
+        "type": "event",
+        "agent": "claude-code",
+        "event": "PreToolUse",
+        "id": "1",
+        "payload": {
+          "hook_event_name": "PreToolUse",
+          "session_id": "session",
+          "prompt_id": "turn",
+          "tool_use_id": "one"
+        }
+      },
+      "expect": {
+        "state": "working",
+        "certainty": "observed",
+        "dominantAgent": "claude-code",
+        "pendingCount": 0,
+        "formId": "claude"
+      }
+    },
+    {
+      "atMs": 1,
+      "action": {
+        "type": "event",
+        "agent": "claude-code",
+        "event": "Notification",
+        "id": "2",
+        "payload": {
+          "hook_event_name": "Notification",
+          "session_id": "session",
+          "prompt_id": "turn",
+          "notification_type": "idle_prompt"
+        }
+      },
+      "expect": {
+        "state": "notification",
+        "certainty": "observed",
+        "dominantAgent": "claude-code",
+        "pendingCount": 0,
+        "formId": "claude"
+      }
+    },
+    {
+      "atMs": 2000,
+      "action": {
+        "type": "event",
+        "agent": "claude-code",
+        "event": "Notification",
+        "id": "3",
+        "payload": {
+          "hook_event_name": "Notification",
+          "session_id": "session",
+          "prompt_id": "turn",
+          "notification_type": "idle_prompt"
+        }
+      },
+      "expect": {
+        "state": "notification",
+        "certainty": "observed",
+        "dominantAgent": "claude-code",
+        "pendingCount": 0,
+        "formId": "claude"
+      }
+    },
+    {
+      "atMs": 4000,
+      "action": {
+        "type": "tick"
+      },
+      "expect": {
+        "state": "notification",
+        "certainty": "observed",
+        "dominantAgent": "claude-code",
+        "pendingCount": 0,
+        "formId": "claude"
+      }
+    },
+    {
+      "atMs": 4001,
+      "action": {
+        "type": "tick"
+      },
+      "expect": {
+        "state": "working",
+        "certainty": "observed",
+        "dominantAgent": "claude-code",
+        "pendingCount": 0,
+        "formId": "claude"
+      }
+    }
+  ]
+}

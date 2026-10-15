@@ -1,0 +1,86 @@
+{
+  "schemaVersion": 1,
+  "id": "activity-certainty-and-sleep",
+  "description": "六十秒减弱、五分钟不确定，全局十分钟空闲睡眠。",
+  "provenance": "synthetic",
+  "sourceVersions": {
+    "codex": "0.162.0-alpha.17.2"
+  },
+  "steps": [
+    {
+      "atMs": 0,
+      "action": {
+        "type": "event",
+        "agent": "codex",
+        "event": "PreToolUse",
+        "id": "1",
+        "payload": {
+          "hook_event_name": "PreToolUse",
+          "session_id": "session",
+          "turn_id": "turn",
+          "tool_use_id": "one"
+        }
+      },
+      "expect": {
+        "state": "working",
+        "certainty": "observed",
+        "dominantAgent": "codex",
+        "pendingCount": 0,
+        "formId": "codex"
+      }
+    },
+    {
+      "atMs": 59999,
+      "action": {
+        "type": "tick"
+      },
+      "expect": {
+        "state": "working",
+        "certainty": "observed",
+        "dominantAgent": "codex",
+        "pendingCount": 0,
+        "formId": "codex"
+      }
+    },
+    {
+      "atMs": 60000,
+      "action": {
+        "type": "tick"
+      },
+      "expect": {
+        "state": "working",
+        "certainty": "stale",
+        "dominantAgent": "codex",
+        "pendingCount": 0,
+        "formId": "codex"
+      }
+    },
+    {
+      "atMs": 300000,
+      "action": {
+        "type": "tick"
+      },
+      "expect": {
+        "state": "idle",
+        "certainty": "unknown",
+        "dominantAgent": "codex",
+        "pendingCount": 0,
+        "formId": "codex",
+        "bubbleKey": "uncertain"
+      }
+    },
+    {
+      "atMs": 600000,
+      "action": {
+        "type": "tick"
+      },
+      "expect": {
+        "state": "sleeping",
+        "certainty": "unknown",
+        "dominantAgent": "codex",
+        "pendingCount": 0,
+        "formId": "codex"
+      }
+    }
+  ]
+}

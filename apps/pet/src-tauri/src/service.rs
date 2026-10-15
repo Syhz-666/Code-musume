@@ -24,7 +24,7 @@ use tauri::{ipc::Channel, AppHandle, Manager};
 use tokio::sync::{mpsc, oneshot};
 
 enum Message {
-    Event(EnvelopeV2, usize),
+    Event(EnvelopeV2, usize, Instant),
     Subscribe(String, Channel<Projection>, oneshot::Sender<Projection>),
     Unsubscribe(String),
     Get(oneshot::Sender<Projection>),
@@ -36,6 +36,26 @@ enum Message {
     Diagnostics(oneshot::Sender<Vec<Diagnostic>>),
     Reset,
     Position(Position),
+    #[cfg(feature = "e2e")]
+    AdvanceClock(u64, oneshot::Sender<Projection>),
+}
+struct Clock {
+    start: Instant,
+    #[cfg(feature = "e2e")]
+    offset: AtomicU64,
+}
+impl Clock {
+    fn now(&self) -> u64 {
+        let elapsed = self.start.elapsed().as_millis() as u64;
+        #[cfg(feature = "e2e")]
+        {
+            elapsed.saturating_add(self.offset.load(Ordering::SeqCst))
+        }
+        #[cfg(not(feature = "e2e"))]
+        {
+            elapsed
+        }
+    }
 }
 pub struct Native {
     tx: mpsc::Sender<Message>,
@@ -46,6 +66,8 @@ pub struct Native {
     pub runtime_path: std::path::PathBuf,
     rate: Mutex<(Instant, f64)>,
     pub render_fps: Mutex<Option<(Instant, f64)>>,
+    pub render_receipts: Mutex<super::render_receipts::RenderReceipts>,
+    clock: Clock,
 }
 impl Native {
     pub fn start(app: Option<AppHandle>, mode: &str) -> Result<Arc<Self>, String> {
@@ -73,7 +95,9 @@ impl Native {
                 config.character_id = "builtin".into();
                 config.form_lock = None;
                 config.agent_forms.clear();
-                config.renderer = "pixi".into();
+                if !matches!(config.renderer.as_str(), "pixi" | "dom") {
+                    config.renderer = "pixi".into();
+                }
                 super::characters::builtin()
             }
         };
@@ -100,6 +124,12 @@ impl Native {
         };
         let (tx, mut rx) = mpsc::channel(MAX_QUEUE_ENTRIES);
         let native = Arc::new(Self {
+            clock: Clock {
+                start: Instant::now(),
+                #[cfg(feature = "e2e")]
+                offset: AtomicU64::new(0),
+            },
+            render_receipts: Mutex::new(super::render_receipts::RenderReceipts::default()),
             tx,
             bytes: AtomicUsize::new(0),
             lost: AtomicU64::new(0),
@@ -115,7 +145,6 @@ impl Native {
             let mut engine = Engine::new(instance, config);
             engine.character_forms = character.agent_forms;
             engine.default_form = character.default_form;
-            let start = Instant::now();
             let mut subscribers: BTreeMap<String, Channel<Projection>> = BTreeMap::new();
             let mut last_broadcast = 0;
             let mut timer = tokio::time::interval(Duration::from_millis(250));
@@ -124,13 +153,16 @@ impl Native {
             let mut fullscreen = false;
             let mut last_fullscreen = Instant::now();
             loop {
-                let now = start.elapsed().as_millis() as u64;
+                let now = state.clock.now();
+                let mut received = None;
                 tokio::select! {
                     msg=rx.recv()=>match msg{
-                        Some(Message::Event(e,size))=>{state.bytes.fetch_sub(size,Ordering::SeqCst);engine.ingest(e,start.elapsed().as_millis()as u64);},
+                        Some(Message::Event(e,size,at))=>{received=Some(at);state.bytes.fetch_sub(size,Ordering::SeqCst);engine.ingest(e,state.clock.now());},
                         Some(Message::Subscribe(id,c,reply))=>{let label=id.split(':').next().unwrap_or("");subscribers.retain(|old,_|old.split(':').next()!=Some(label));let p=engine.snapshot();let _=c.send(p.clone());subscribers.insert(id,c);let _=reply.send(p);},
                         Some(Message::Unsubscribe(id))=>{subscribers.remove(&id);},
-                        Some(Message::Get(reply))=>{engine.tick(start.elapsed().as_millis()as u64);let _=reply.send(engine.snapshot());},
+                        Some(Message::Get(reply))=>{engine.tick(state.clock.now());let _=reply.send(engine.snapshot());},
+                        #[cfg(feature = "e2e")]
+                        Some(Message::AdvanceClock(ms,reply))=>{state.clock.offset.fetch_add(ms,Ordering::SeqCst);engine.tick(state.clock.now());let _=reply.send(engine.snapshot());},
                         Some(Message::Diagnostics(reply))=>{let _=reply.send(engine.diagnostics());},
                         Some(Message::Reset)=>engine.reset(now),
                         Some(Message::Position(p))=>{engine.config.position=Some(p);*state.config.lock().unwrap()=engine.config.clone();position_dirty=true;last_position=Instant::now();},
@@ -148,7 +180,7 @@ impl Native {
                         None=>break,
                     },
                     _=timer.tick()=>{
-                        let now=start.elapsed().as_millis()as u64;let lost=state.lost.swap(0,Ordering::SeqCst);if lost>0{engine.lost(lost,now);}engine.tick(now);
+                        let now=state.clock.now();let lost=state.lost.swap(0,Ordering::SeqCst);if lost>0{engine.lost(lost,now);}engine.tick(now);
                         if position_dirty&&last_position.elapsed()>=Duration::from_millis(500){let _=atomic_write(&config_dir().join("config.json"),&serde_json::to_vec_pretty(&engine.config).unwrap());position_dirty=false;}
                         if last_fullscreen.elapsed()>=Duration::from_secs(2){last_fullscreen=Instant::now();if let Some(app)=&app{
                             let f=engine.config.fullscreen_hide&&super::platform::fullscreen(app);if f!=fullscreen{fullscreen=f;super::apply_visibility(app,&state,fullscreen);}
@@ -159,6 +191,11 @@ impl Native {
                 let p = engine.snapshot();
                 if p.revision != last_broadcast {
                     last_broadcast = p.revision;
+                    state
+                        .render_receipts
+                        .lock()
+                        .unwrap()
+                        .published(p.revision, received.unwrap_or_else(Instant::now));
                     subscribers.retain(|id, c| {
                         if let Some(app) = &app {
                             if let Some(w) =
@@ -256,6 +293,18 @@ impl Native {
     pub fn position(&self, p: Position) {
         let _ = self.tx.try_send(Message::Position(p));
     }
+    #[cfg(feature = "e2e")]
+    pub async fn advance_clock(&self, ms: u64) -> Result<Projection, String> {
+        if ms > 3_600_000 {
+            return Err("测试时钟步长过大".into());
+        }
+        let (tx, rx) = oneshot::channel();
+        self.tx
+            .send(Message::AdvanceClock(ms, tx))
+            .await
+            .map_err(|_| "核心已停止")?;
+        rx.await.map_err(|_| "核心已停止".into())
+    }
 }
 async fn authorize(
     State(s): State<Arc<Native>>,
@@ -299,6 +348,7 @@ async fn authorize(
     response
 }
 async fn receive(State(s): State<Arc<Native>>, body: Bytes) -> Response {
+    let received = Instant::now();
     let e: EnvelopeV2 = match serde_json::from_slice(&body) {
         Ok(e) => e,
         Err(_) => {
@@ -311,19 +361,8 @@ async fn receive(State(s): State<Arc<Native>>, body: Bytes) -> Response {
         return StatusCode::BAD_REQUEST.into_response();
     }
     let size = body.len();
-    if s.bytes
-        .try_update(Ordering::SeqCst, Ordering::SeqCst, |v| {
-            v.checked_add(size).filter(|v| *v <= MAX_QUEUE_BYTES)
-        })
-        .is_err()
-    {
-        s.lost.fetch_add(1, Ordering::SeqCst);
-        return StatusCode::TOO_MANY_REQUESTS.into_response();
-    }
     let id = e.id.clone();
-    if s.tx.try_send(Message::Event(e, size)).is_err() {
-        s.bytes.fetch_sub(size, Ordering::SeqCst);
-        s.lost.fetch_add(1, Ordering::SeqCst);
+    if !enqueue(&s.tx, &s.bytes, &s.lost, e, size, received) {
         return StatusCode::TOO_MANY_REQUESTS.into_response();
     }
     (
@@ -331,6 +370,30 @@ async fn receive(State(s): State<Arc<Native>>, body: Bytes) -> Response {
         Json(serde_json::json!({"accepted":true,"id":id,"instanceId":s.runtime.instance_id})),
     )
         .into_response()
+}
+fn enqueue(
+    tx: &mpsc::Sender<Message>,
+    bytes: &AtomicUsize,
+    lost: &AtomicU64,
+    e: EnvelopeV2,
+    size: usize,
+    received: Instant,
+) -> bool {
+    if bytes
+        .try_update(Ordering::SeqCst, Ordering::SeqCst, |v| {
+            v.checked_add(size).filter(|v| *v <= MAX_QUEUE_BYTES)
+        })
+        .is_err()
+    {
+        lost.fetch_add(1, Ordering::SeqCst);
+        return false;
+    }
+    if tx.try_send(Message::Event(e, size, received)).is_err() {
+        bytes.fetch_sub(size, Ordering::SeqCst);
+        lost.fetch_add(1, Ordering::SeqCst);
+        return false;
+    }
+    true
 }
 async fn health(State(s): State<Arc<Native>>) -> Response {
     match s.projection().await {
@@ -341,8 +404,64 @@ async fn health(State(s): State<Arc<Native>>) -> Response {
                 .unwrap()
                 .filter(|(at, _)| at.elapsed() < Duration::from_secs(5))
                 .map(|(_, fps)| fps);
-            Json(serde_json::json!({"v":2,"appVersion":s.runtime.app_version,"projection":p,"renderFps":fps})).into_response()
+            let receipt = s.render_receipts.lock().unwrap().latest.clone();
+            Json(serde_json::json!({"v":2,"appVersion":s.runtime.app_version,"projection":p,"renderFps":fps,"renderReceipt":receipt})).into_response()
         }
         Err(_) => StatusCode::SERVICE_UNAVAILABLE.into_response(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn event() -> EnvelopeV2 {
+        EnvelopeV2 {
+            v: 2,
+            id: "fixture".into(),
+            agent: Agent::Codex,
+            event: "Stop".into(),
+            ts: 0,
+            src: EnvelopeSrc {
+                cli: "test".into(),
+                pid: 0,
+            },
+            payload: "{}".into(),
+            parse_error: None,
+        }
+    }
+    #[test]
+    fn full_entry_queue_rolls_back_bytes_and_records_loss() {
+        let (tx, mut rx) = mpsc::channel(MAX_QUEUE_ENTRIES);
+        let bytes = AtomicUsize::new(0);
+        let lost = AtomicU64::new(0);
+        for _ in 0..MAX_QUEUE_ENTRIES {
+            assert!(enqueue(&tx, &bytes, &lost, event(), 10, Instant::now()));
+        }
+        assert!(!enqueue(&tx, &bytes, &lost, event(), 10, Instant::now()));
+        assert_eq!(bytes.load(Ordering::SeqCst), MAX_QUEUE_ENTRIES * 10);
+        assert_eq!(lost.load(Ordering::SeqCst), 1);
+        assert!(rx.try_recv().is_ok());
+        bytes.fetch_sub(10, Ordering::SeqCst);
+        assert!(enqueue(&tx, &bytes, &lost, event(), 10, Instant::now()));
+    }
+    #[test]
+    fn byte_limit_is_inclusive_and_rejection_keeps_accounting() {
+        let (tx, _rx) = mpsc::channel(MAX_QUEUE_ENTRIES);
+        let bytes = AtomicUsize::new(0);
+        let lost = AtomicU64::new(0);
+        for _ in 0..4 {
+            assert!(enqueue(
+                &tx,
+                &bytes,
+                &lost,
+                event(),
+                MAX_ENVELOPE_BYTES,
+                Instant::now()
+            ));
+        }
+        assert_eq!(bytes.load(Ordering::SeqCst), MAX_QUEUE_BYTES);
+        assert!(!enqueue(&tx, &bytes, &lost, event(), 1, Instant::now()));
+        assert_eq!(bytes.load(Ordering::SeqCst), MAX_QUEUE_BYTES);
+        assert_eq!(lost.load(Ordering::SeqCst), 1);
     }
 }

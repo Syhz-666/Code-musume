@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "id": "form-precedence",
+  "description": "用户全局锁定优先于来源覆盖，来源覆盖优先于角色映射。",
+  "provenance": "synthetic",
+  "sourceVersions": {
+    "codex": "0.162.0-alpha.17.2"
+  },
+  "steps": [
+    {
+      "atMs": 0,
+      "action": {
+        "type": "event",
+        "agent": "codex",
+        "event": "UserPromptSubmit",
+        "id": "1",
+        "payload": {
+          "hook_event_name": "UserPromptSubmit",
+          "session_id": "session",
+          "turn_id": "turn"
+        }
+      },
+      "expect": {
+        "state": "thinking",
+        "certainty": "observed",
+        "dominantAgent": "codex",
+        "pendingCount": 0,
+        "formId": "codex"
+      }
+    },
+    {
+      "atMs": 1,
+      "action": {
+        "type": "configure",
+        "config": {
+          "agentForms": {
+            "codex": "claude"
+          }
+        }
+      },
+      "expect": {
+        "state": "thinking",
+        "certainty": "observed",
+        "dominantAgent": "codex",
+        "pendingCount": 0,
+        "formId": "claude"
+      }
+    },
+    {
+      "atMs": 2,
+      "action": {
+        "type": "configure",
+        "config": {
+          "formLock": "default",
+          "agentForms": {
+            "codex": "claude"
+          }
+        }
+      },
+      "expect": {
+        "state": "thinking",
+        "certainty": "observed",
+        "dominantAgent": "codex",
+        "pendingCount": 0,
+        "formId": "default"
+      }
+    },
+    {
+      "atMs": 3,
+      "action": {
+        "type": "configure",
+        "config": {}
+      },
+      "expect": {
+        "state": "thinking",
+        "certainty": "observed",
+        "dominantAgent": "codex",
+        "pendingCount": 0,
+        "formId": "codex"
+      }
+    }
+  ]
+}

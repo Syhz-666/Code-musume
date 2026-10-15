@@ -1,0 +1,81 @@
+{
+  "schemaVersion": 1,
+  "id": "claude-code-tool-error",
+  "description": "仅根据来源支持的失败证据显示错误，三十秒后恢复活动。",
+  "provenance": "synthetic",
+  "sourceVersions": {
+    "claude-code": "2.1.295"
+  },
+  "steps": [
+    {
+      "atMs": 0,
+      "action": {
+        "type": "event",
+        "agent": "claude-code",
+        "event": "PreToolUse",
+        "id": "1",
+        "payload": {
+          "hook_event_name": "PreToolUse",
+          "session_id": "session",
+          "prompt_id": "turn",
+          "tool_use_id": "one"
+        }
+      },
+      "expect": {
+        "state": "working",
+        "certainty": "observed",
+        "dominantAgent": "claude-code",
+        "pendingCount": 0,
+        "formId": "claude"
+      }
+    },
+    {
+      "atMs": 1,
+      "action": {
+        "type": "event",
+        "agent": "claude-code",
+        "event": "PostToolUseFailure",
+        "id": "2",
+        "payload": {
+          "hook_event_name": "PostToolUseFailure",
+          "session_id": "session",
+          "prompt_id": "turn",
+          "tool_use_id": "one"
+        }
+      },
+      "expect": {
+        "state": "error",
+        "certainty": "observed",
+        "dominantAgent": "claude-code",
+        "pendingCount": 0,
+        "formId": "claude"
+      }
+    },
+    {
+      "atMs": 30000,
+      "action": {
+        "type": "tick"
+      },
+      "expect": {
+        "state": "error",
+        "certainty": "observed",
+        "dominantAgent": "claude-code",
+        "pendingCount": 0,
+        "formId": "claude"
+      }
+    },
+    {
+      "atMs": 30001,
+      "action": {
+        "type": "tick"
+      },
+      "expect": {
+        "state": "thinking",
+        "certainty": "observed",
+        "dominantAgent": "claude-code",
+        "pendingCount": 0,
+        "formId": "claude"
+      }
+    }
+  ]
+}

@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 1,
+  "id": "waiting-never-times-out",
+  "description": "等待十分钟后减弱但始终可见。",
+  "provenance": "synthetic",
+  "sourceVersions": {
+    "claude-code": "2.1.295"
+  },
+  "steps": [
+    {
+      "atMs": 0,
+      "action": {
+        "type": "event",
+        "agent": "claude-code",
+        "event": "PermissionRequest",
+        "id": "1",
+        "payload": {
+          "hook_event_name": "PermissionRequest",
+          "session_id": "session",
+          "prompt_id": "turn",
+          "tool_use_id": "one"
+        }
+      },
+      "expect": {
+        "state": "waiting-permission",
+        "certainty": "observed",
+        "dominantAgent": "claude-code",
+        "pendingCount": 1,
+        "formId": "claude"
+      }
+    },
+    {
+      "atMs": 599999,
+      "action": {
+        "type": "tick"
+      },
+      "expect": {
+        "state": "waiting-permission",
+        "certainty": "observed",
+        "dominantAgent": "claude-code",
+        "pendingCount": 1,
+        "formId": "claude"
+      }
+    },
+    {
+      "atMs": 600000,
+      "action": {
+        "type": "tick"
+      },
+      "expect": {
+        "state": "waiting-permission",
+        "certainty": "stale",
+        "dominantAgent": "claude-code",
+        "pendingCount": 1,
+        "formId": "claude"
+      }
+    },
+    {
+      "atMs": 3600000,
+      "action": {
+        "type": "tick"
+      },
+      "expect": {
+        "state": "waiting-permission",
+        "certainty": "stale",
+        "dominantAgent": "claude-code",
+        "pendingCount": 1,
+        "formId": "claude"
+      }
+    }
+  ]
+}

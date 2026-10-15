@@ -12,6 +12,7 @@ export type Projection = { v: number, instanceId: string, revision: number, stat
 export type Position = { monitorId: string, xPhys: number, yPhys: number, };
 export type Config = { schemaVersion: number, characterId: string, formLock: string | null, agentForms: { [key in string]: string }, ghost: boolean, userHidden: boolean, reducedMotion: boolean, fullscreenHide: boolean, autostart: boolean, renderer: string, position: Position | null, };
 export type Diagnostic = { seq: number, agent: Agent | null, event: string, sessionLabel: string | null, outcome: string, };
+export type RenderReceipt = { instanceId: string, revision: number, latencyMs: number, };
 export type Clip = { row: number, frames: number, fps: number, looping: boolean, };
 export type CharacterForm = { id: string, image: string, cellWidth: number, cellHeight: number, columns: number, clips: { [key in string]: Clip }, lookRows: boolean, };
 export type CharacterManifest = { schemaVersion: number, id: string, name: string, defaultForm: string, agentForms: { [key in string]: string }, forms: Array<CharacterForm>, license: string | null, };

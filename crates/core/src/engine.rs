@@ -262,6 +262,9 @@ impl Engine {
                     if let Some(k) = victim {
                         self.sessions.remove(&k);
                     } else {
+                        for session in self.sessions.values_mut() {
+                            session.degraded = true;
+                        }
                         self.log(
                             Some(e.agent),
                             &envelope.event,

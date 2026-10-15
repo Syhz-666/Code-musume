@@ -1,0 +1,134 @@
+{
+  "schemaVersion": 1,
+  "id": "waiting-survives-other-agent",
+  "description": "另一来源的结束和工作不能清除等待，匹配工具完成才解除。",
+  "provenance": "synthetic",
+  "sourceVersions": {
+    "claude-code": "2.1.295",
+    "codex": "0.162.0-alpha.17.2"
+  },
+  "steps": [
+    {
+      "atMs": 0,
+      "action": {
+        "type": "event",
+        "agent": "claude-code",
+        "event": "PreToolUse",
+        "id": "1",
+        "payload": {
+          "hook_event_name": "PreToolUse",
+          "session_id": "session",
+          "prompt_id": "turn",
+          "tool_use_id": "read"
+        }
+      },
+      "expect": {
+        "state": "working",
+        "certainty": "observed",
+        "dominantAgent": "claude-code",
+        "pendingCount": 0,
+        "formId": "claude"
+      }
+    },
+    {
+      "atMs": 1,
+      "action": {
+        "type": "event",
+        "agent": "claude-code",
+        "event": "PermissionRequest",
+        "id": "2",
+        "payload": {
+          "hook_event_name": "PermissionRequest",
+          "session_id": "session",
+          "prompt_id": "turn",
+          "tool_use_id": "read"
+        }
+      },
+      "expect": {
+        "state": "waiting-permission",
+        "certainty": "observed",
+        "dominantAgent": "claude-code",
+        "pendingCount": 1,
+        "formId": "claude"
+      }
+    },
+    {
+      "atMs": 2,
+      "action": {
+        "type": "event",
+        "agent": "codex",
+        "event": "PreToolUse",
+        "id": "3",
+        "payload": {
+          "hook_event_name": "PreToolUse",
+          "session_id": "session",
+          "turn_id": "turn",
+          "tool_use_id": "other"
+        }
+      },
+      "expect": {
+        "state": "waiting-permission",
+        "certainty": "observed",
+        "dominantAgent": "claude-code",
+        "pendingCount": 1,
+        "formId": "claude"
+      }
+    },
+    {
+      "atMs": 3,
+      "action": {
+        "type": "event",
+        "agent": "codex",
+        "event": "Stop",
+        "id": "4",
+        "payload": {
+          "hook_event_name": "Stop",
+          "session_id": "session",
+          "turn_id": "turn"
+        }
+      },
+      "expect": {
+        "state": "waiting-permission",
+        "certainty": "observed",
+        "dominantAgent": "claude-code",
+        "pendingCount": 1,
+        "formId": "claude"
+      }
+    },
+    {
+      "atMs": 4,
+      "action": {
+        "type": "event",
+        "agent": "claude-code",
+        "event": "PostToolUse",
+        "id": "5",
+        "payload": {
+          "hook_event_name": "PostToolUse",
+          "session_id": "session",
+          "prompt_id": "turn",
+          "tool_use_id": "read"
+        }
+      },
+      "expect": {
+        "state": "done",
+        "certainty": "observed",
+        "dominantAgent": "codex",
+        "pendingCount": 0,
+        "formId": "codex"
+      }
+    },
+    {
+      "atMs": 3003,
+      "action": {
+        "type": "tick"
+      },
+      "expect": {
+        "state": "thinking",
+        "certainty": "observed",
+        "dominantAgent": "claude-code",
+        "pendingCount": 0,
+        "formId": "claude"
+      }
+    }
+  ]
+}

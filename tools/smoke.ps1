@@ -1,4 +1,4 @@
-param([ValidateSet('debug','release')][string]$Profile='debug')
+param([ValidateSet('debug','release')][string]$Profile='debug',[string]$BinDir='')
 $ErrorActionPreference='Stop'
 $repo=Split-Path -Parent $PSScriptRoot
 $case=Join-Path $repo ('.test-artifacts/smoke-'+[guid]::NewGuid().ToString('N'))
@@ -9,13 +9,15 @@ $priorSeconds=$env:CODE_MUSUME_HEADLESS_SECONDS
 $env:CODE_MUSUME_DATA_DIR=Join-Path $case 'runtime'
 $env:CODE_MUSUME_CONFIG_DIR=Join-Path $case 'config'
 $env:CODE_MUSUME_HEADLESS_SECONDS='120'
-$exe=Join-Path $repo ('target/'+$Profile+'/pet.exe')
-$cli=Join-Path $repo ('target/'+$Profile+'/code-musume-hook.exe')
+$binaryRoot=if($BinDir){[IO.Path]::GetFullPath($BinDir)}else{Join-Path $repo ('target/'+$Profile)}
+$exe=Join-Path $binaryRoot 'pet.exe'
+$cli=Join-Path $binaryRoot 'code-musume-hook.exe'
 $mode=if($Profile -eq 'debug'){'dev'}else{'release'}
 $runtime=Join-Path $env:CODE_MUSUME_DATA_DIR $(if($mode -eq 'dev'){'runtime.dev.json'}else{'runtime.json'})
 $checks=[System.Collections.Generic.List[string]]::new()
 function Assert-That($value,[string]$label){if(-not $value){throw ('FAILED: '+$label)};$checks.Add($label)}
 function Send-Hook([string]$agent,[string]$event,[hashtable]$payload){
+    $payload.hook_event_name=$event
     $info=New-Object System.Diagnostics.ProcessStartInfo
     $info.FileName=$cli
     $info.Arguments='--agent '+$agent+' --event '+$event+' --runtime '+$mode
@@ -42,16 +44,22 @@ try {
     Assert-That ((Snapshot).state -eq 'idle') 'initial idle without a window'
     Check-Rejection @{} 401
     Check-Rejection @{Authorization=$headers.Authorization;Origin='https://example.invalid'} 403
-    $p=@{session_id='same';prompt_id='turn';turn_id='turn';tool_use_id='tool';tool_name='Bash';tool_input=@{command='fixture'}}
+    function Tool-Fixture([string]$agent){
+        $scenario=Get-Content -LiteralPath (Join-Path $repo ('fixtures/scenarios/'+$agent+'-normal.json')) -Encoding UTF8 -Raw | ConvertFrom-Json
+        $source=($scenario.steps | Where-Object {$_.action.type -eq 'event' -and $_.action.event -eq 'PreToolUse'} | Select-Object -First 1).action.payload
+        $payload=@{};foreach($property in $source.PSObject.Properties){$payload[$property.Name]=$property.Value};return $payload
+    }
+    $p=Tool-Fixture 'claude-code'
+    $cx=Tool-Fixture 'codex'
     $watch=[Diagnostics.Stopwatch]::StartNew()
     Send-Hook 'claude-code' 'PreToolUse' $p
     Assert-That ((Snapshot).state -eq 'working') 'Claude working'
     Assert-That ($watch.ElapsedMilliseconds -lt 1000) 'CLI-to-core under 1 second'
     $latency=$watch.ElapsedMilliseconds
-    Send-Hook 'codex' 'PreToolUse' $p
+    Send-Hook 'codex' 'PreToolUse' $cx
     Assert-That ((Snapshot).activeSessions -eq 2) 'same ID is isolated by source'
     Send-Hook 'claude-code' 'PermissionRequest' $p
-    Send-Hook 'codex' 'Stop' $p
+    Send-Hook 'codex' 'Stop' $cx
     Assert-That ((Snapshot).pendingCount -eq 1) 'other source stop preserves waiting'
     Send-Hook 'claude-code' 'PostToolUse' $p
     Assert-That ((Snapshot).pendingCount -eq 0) 'matched tool resolves waiting'

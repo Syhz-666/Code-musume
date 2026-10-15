@@ -1,0 +1,75 @@
+{
+  "provenance": "real-redacted",
+  "capturedAt": "2026-10-15",
+  "sourceVersions": {
+    "claude-code": "2.1.295 (Claude Code)"
+  },
+  "events": [
+    {
+      "v": 2,
+      "id": "sample-f6f483674812dc3380fe",
+      "agent": "claude-code",
+      "event": "SessionStart",
+      "ts": 1792043739038,
+      "src": {
+        "cli": "real-redacted-capture",
+        "pid": 0
+      },
+      "payload": "{\"session_id\":\"sample-f5d0fa756984055ae444\",\"hook_event_name\":\"SessionStart\"}",
+      "parseError": null
+    },
+    {
+      "v": 2,
+      "id": "sample-7e2298518dc41a14ec48",
+      "agent": "claude-code",
+      "event": "UserPromptSubmit",
+      "ts": 1792043739184,
+      "src": {
+        "cli": "real-redacted-capture",
+        "pid": 0
+      },
+      "payload": "{\"session_id\":\"sample-f5d0fa756984055ae444\",\"prompt_id\":\"sample-39a4fb5b2e09ccec702c\",\"hook_event_name\":\"UserPromptSubmit\"}",
+      "parseError": null
+    },
+    {
+      "v": 2,
+      "id": "sample-60df39ba70311b4a21ec",
+      "agent": "claude-code",
+      "event": "PreToolUse",
+      "ts": 1792043740876,
+      "src": {
+        "cli": "real-redacted-capture",
+        "pid": 0
+      },
+      "payload": "{\"session_id\":\"sample-f5d0fa756984055ae444\",\"prompt_id\":\"sample-39a4fb5b2e09ccec702c\",\"tool_use_id\":\"sample-dc69d367d7d97750e8a5\",\"tool_name\":\"Read\",\"tool_input\":{\"file_path\":\"sample-db0fc1a64fc8de730c58\"},\"hook_event_name\":\"PreToolUse\"}",
+      "parseError": null
+    },
+    {
+      "v": 2,
+      "id": "sample-424194e56fb81ccdbe23",
+      "agent": "claude-code",
+      "event": "PostToolUse",
+      "ts": 1792043740913,
+      "src": {
+        "cli": "real-redacted-capture",
+        "pid": 0
+      },
+      "payload": "{\"session_id\":\"sample-f5d0fa756984055ae444\",\"prompt_id\":\"sample-39a4fb5b2e09ccec702c\",\"tool_use_id\":\"sample-dc69d367d7d97750e8a5\",\"tool_name\":\"Read\",\"tool_input\":{\"file_path\":\"sample-db0fc1a64fc8de730c58\"},\"tool_response\":{\"sample-d9f63a75cadc4f3904f2\":\"sample-dc98d41a6ad316054156\",\"sample-7bb24ccebd5fd0a7728a\":{\"sample-2e38ffbea8782a8005ff\":\"sample-db0fc1a64fc8de730c58\",\"content\":\"sample-ca2235a5be79d07d202c\",\"sample-6dc955a729a0e751e12f\":3,\"sample-db9839060ad85cc01d35\":1,\"sample-f51a8c46f686ba8ef4d8\":3}},\"hook_event_name\":\"PostToolUse\"}",
+      "parseError": null
+    },
+    {
+      "v": 2,
+      "id": "sample-f0045363db4900c41f44",
+      "agent": "claude-code",
+      "event": "Stop",
+      "ts": 1792043743146,
+      "src": {
+        "cli": "real-redacted-capture",
+        "pid": 0
+      },
+      "payload": "{\"session_id\":\"sample-f5d0fa756984055ae444\",\"prompt_id\":\"sample-39a4fb5b2e09ccec702c\",\"background_tasks\":[],\"hook_event_name\":\"Stop\"}",
+      "parseError": null
+    }
+  ],
+  "note": "Raw prompt, paths and tool text were not saved. Stable per-run pseudonyms preserve correlation and failure fields."
+}

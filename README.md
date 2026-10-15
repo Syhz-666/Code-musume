@@ -12,6 +12,8 @@ Windows 桌面伴侣，接收 Claude Code 与本机 Codex 桌面应用的工作�
 
 托盘提供显示、隐藏、穿透、设置和退出。全屏自动让位，位置按物理坐标与显示器保存；减少动画尊重系统偏好。首版 Codex 验收仅本机桌面任务，CLI/IDE/远程后置。
 
+当前源码增加桌宠左下角「退出」和设置页右上角「退出代码娘」，点击会结束整个应用；关闭设置窗口仅关闭设置。旧安装包需重新构建才包含这些入口。
+
 ## 开发
 
 需要 Windows 11、WebView2、Rust MSVC（本机 1.99）、Node 和 pnpm（packageManager 锁定）。
@@ -47,6 +49,15 @@ target/debug/code-musume-hook.exe install --agent codex --scope project --cwd D:
 install/uninstall 默认只预览；真正写入需要 --confirm 和此前 --expected-digest。支持两家独立接线。hook 模式安静 exit 0；显示子命令可输出人读结果。测试目录可通过 --state-dir 隔离回执。
 
 tools/smoke.ps1 验证真实 CLI→HTTP→native 通路，输入为合成样本；tools/measure-runtime.ps1 采集进程树资源；tools/test-installer.ps1 在隔离目录验证当前用户安装卸载。真实脱敏 Claude 记录在 fixtures/hooks/captured-claude-2.1.295.json。Codex 信任、窗口细项和一天使用按验证清单人工完成。
+
+## 自动验收
+
+2026-10-15 新增固定场景回放、实际桌面界面自动化与渲染回执，见 [测试与验收](docs/测试与验收-2026-10-15.md)。现有安装包来自 10-14，本轮修改需要重新构建。
+
+- `pnpm test:replay`：21 个场景、110 个检查点，失败报告在 .test-artifacts/replay/result.json。
+- `pnpm test:tools`：采集脱敏、关联与转发失败检查。
+- `pnpm test:ui`：独立构建并操作实际桌宠与设置；缺少已审阅截图基准会返回失败，不会自动接受截图。
+- `pnpm verify:desktop`：现有检查、事件通路、生产依赖隔离与桌面界面验收。
 
 ## 结构与资料
 

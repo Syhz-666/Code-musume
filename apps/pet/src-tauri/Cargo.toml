@@ -11,11 +11,16 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
+[features]
+e2e = ["dep:tauri-plugin-wdio", "dep:tauri-plugin-wdio-webdriver"]
+
 [dependencies]
 # 钉在 2.12.x：with_webview 的 webview2-com 依赖会随 tauri minor 版本变动（P13）
 tauri = { version = "~2.12", features = ["tray-icon"] }
 tauri-plugin-single-instance = "2"
 tauri-plugin-dialog = "2"
+tauri-plugin-wdio = { version = "=1.5.0", optional = true }
+tauri-plugin-wdio-webdriver = { version = "=1.5.0", optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 code-musume-contracts = { workspace = true }

@@ -1,0 +1,84 @@
+{
+  "schemaVersion": 1,
+  "id": "codex-tool-error",
+  "description": "仅根据来源支持的失败证据显示错误，三十秒后恢复活动。",
+  "provenance": "synthetic",
+  "sourceVersions": {
+    "codex": "0.162.0-alpha.17.2"
+  },
+  "steps": [
+    {
+      "atMs": 0,
+      "action": {
+        "type": "event",
+        "agent": "codex",
+        "event": "PreToolUse",
+        "id": "1",
+        "payload": {
+          "hook_event_name": "PreToolUse",
+          "session_id": "session",
+          "turn_id": "turn",
+          "tool_use_id": "one"
+        }
+      },
+      "expect": {
+        "state": "working",
+        "certainty": "observed",
+        "dominantAgent": "codex",
+        "pendingCount": 0,
+        "formId": "codex"
+      }
+    },
+    {
+      "atMs": 1,
+      "action": {
+        "type": "event",
+        "agent": "codex",
+        "event": "PostToolUse",
+        "id": "2",
+        "payload": {
+          "hook_event_name": "PostToolUse",
+          "session_id": "session",
+          "turn_id": "turn",
+          "tool_use_id": "one",
+          "tool_response": {
+            "exit_code": 1
+          }
+        }
+      },
+      "expect": {
+        "state": "error",
+        "certainty": "observed",
+        "dominantAgent": "codex",
+        "pendingCount": 0,
+        "formId": "codex"
+      }
+    },
+    {
+      "atMs": 30000,
+      "action": {
+        "type": "tick"
+      },
+      "expect": {
+        "state": "error",
+        "certainty": "observed",
+        "dominantAgent": "codex",
+        "pendingCount": 0,
+        "formId": "codex"
+      }
+    },
+    {
+      "atMs": 30001,
+      "action": {
+        "type": "tick"
+      },
+      "expect": {
+        "state": "thinking",
+        "certainty": "observed",
+        "dominantAgent": "codex",
+        "pendingCount": 0,
+        "formId": "codex"
+      }
+    }
+  ]
+}

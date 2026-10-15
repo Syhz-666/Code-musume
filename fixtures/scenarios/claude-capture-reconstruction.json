@@ -1,0 +1,128 @@
+{
+  "schemaVersion": 1,
+  "id": "claude-capture-reconstruction",
+  "description": "根据已脱敏 Claude 正常流程重建；被移除的内容为占位值，不标为真实原始载荷。",
+  "provenance": "derived-from-capture",
+  "sourceVersions": {
+    "claude-code": "2.1.295"
+  },
+  "steps": [
+    {
+      "atMs": 0,
+      "action": {
+        "type": "event",
+        "agent": "claude-code",
+        "event": "SessionStart",
+        "id": "1",
+        "payload": {
+          "hook_event_name": "SessionStart",
+          "session_id": "captured-session"
+        }
+      },
+      "expect": {
+        "state": "idle",
+        "certainty": "observed",
+        "dominantAgent": "claude-code",
+        "pendingCount": 0,
+        "formId": "claude"
+      }
+    },
+    {
+      "atMs": 1,
+      "action": {
+        "type": "event",
+        "agent": "claude-code",
+        "event": "UserPromptSubmit",
+        "id": "2",
+        "payload": {
+          "hook_event_name": "UserPromptSubmit",
+          "session_id": "captured-session",
+          "prompt_id": "captured-prompt"
+        }
+      },
+      "expect": {
+        "state": "thinking",
+        "certainty": "observed",
+        "dominantAgent": "claude-code",
+        "pendingCount": 0,
+        "formId": "claude"
+      }
+    },
+    {
+      "atMs": 2,
+      "action": {
+        "type": "event",
+        "agent": "claude-code",
+        "event": "PreToolUse",
+        "id": "3",
+        "payload": {
+          "hook_event_name": "PreToolUse",
+          "session_id": "captured-session",
+          "prompt_id": "captured-prompt",
+          "tool_use_id": "captured-tool",
+          "tool_name": "Read",
+          "tool_input": {
+            "file_path": "fixture.txt"
+          }
+        }
+      },
+      "expect": {
+        "state": "working",
+        "certainty": "observed",
+        "dominantAgent": "claude-code",
+        "pendingCount": 0,
+        "formId": "claude"
+      }
+    },
+    {
+      "atMs": 3,
+      "action": {
+        "type": "event",
+        "agent": "claude-code",
+        "event": "PostToolUse",
+        "id": "4",
+        "payload": {
+          "hook_event_name": "PostToolUse",
+          "session_id": "captured-session",
+          "prompt_id": "captured-prompt",
+          "tool_use_id": "captured-tool",
+          "tool_name": "Read",
+          "tool_input": {
+            "file_path": "fixture.txt"
+          },
+          "tool_response": {
+            "content": "fixture"
+          }
+        }
+      },
+      "expect": {
+        "state": "thinking",
+        "certainty": "observed",
+        "dominantAgent": "claude-code",
+        "pendingCount": 0,
+        "formId": "claude"
+      }
+    },
+    {
+      "atMs": 4,
+      "action": {
+        "type": "event",
+        "agent": "claude-code",
+        "event": "Stop",
+        "id": "5",
+        "payload": {
+          "hook_event_name": "Stop",
+          "session_id": "captured-session",
+          "prompt_id": "captured-prompt"
+        }
+      },
+      "expect": {
+        "state": "done",
+        "certainty": "observed",
+        "dominantAgent": "claude-code",
+        "pendingCount": 0,
+        "formId": "claude"
+      }
+    }
+  ]
+}

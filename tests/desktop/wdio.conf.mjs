@@ -1,0 +1,81 @@
+import { mkdirSync, writeFileSync } from "node:fs";
+import net from "node:net";
+import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const root = fileURLToPath(new URL("../..", import.meta.url));
+const runDir = process.env.CODE_MUSUME_UI_RUN_DIR;
+if (!runDir) throw new Error("Run through pnpm test:ui so application data is isolated");
+const probe = net.createServer();
+await new Promise((ok, reject) => {
+  probe.once("error", reject);
+  probe.listen(0, "127.0.0.1", ok);
+});
+const port = probe.address().port;
+await new Promise((ok) => probe.close(ok));
+mkdirSync(join(runDir, "logs"), { recursive: true });
+const cases = [];
+export const config = {
+  runner: "local",
+  framework: "mocha",
+  specs: ["./specs/*.mjs"],
+  maxInstances: 1,
+  logLevel: "warn",
+  outputDir: join(runDir, "logs"),
+  reporters: ["spec"],
+  connectionRetryCount: 0,
+  waitforTimeout: 10000,
+  mochaOpts: { timeout: 90000 },
+  services: [
+    [
+      "tauri",
+      {
+        appBinaryPath: resolve(root, "target/e2e/debug/pet.exe"),
+        driverProvider: "embedded",
+        embeddedPort: port,
+        windowLabel: "pet",
+        captureBackendLogs: true,
+        captureFrontendLogs: true,
+        env: {
+          CODE_MUSUME_DATA_DIR: join(runDir, "runtime"),
+          CODE_MUSUME_CONFIG_DIR: join(runDir, "config"),
+          WEBVIEW2_USER_DATA_FOLDER: join(runDir, "webview"),
+          WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: "--force-device-scale-factor=1",
+        },
+      },
+    ],
+  ],
+  capabilities: [
+    {
+      browserName: "tauri",
+      "tauri:options": { application: resolve(root, "target/e2e/debug/pet.exe") },
+    },
+  ],
+  async afterTest(test, _context, result) {
+    cases.push({ name: test.title, passed: result.passed, error: result.error?.message ?? null });
+    if (!result.passed) {
+      try {
+        const diagnostic = await browser.tauri.execute(async ({ core }) => ({
+          projection: await core.invoke("get_projection"),
+          config: await core.invoke("get_config"),
+          view: { ...document.querySelector("#app")?.dataset },
+          controls: [...document.querySelectorAll("select")].map((e) => ({
+            id: e.dataset.testid,
+            value: e.value,
+          })),
+        }));
+        writeFileSync(
+          join(runDir, `failure-${cases.length}.json`),
+          JSON.stringify(diagnostic, null, 2),
+        );
+        await browser.saveScreenshot(join(runDir, `failure-${cases.length}.png`));
+      } catch {
+        /* A crashed webview has no screenshot. */
+      }
+    }
+    writeFileSync(
+      join(runDir, "functional-results.json"),
+      JSON.stringify({ at: new Date().toISOString(), synthetic: true, cases }, null, 2),
+    );
+  },
+};

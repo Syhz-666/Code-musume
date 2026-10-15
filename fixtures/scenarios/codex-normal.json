@@ -1,0 +1,185 @@
+{
+  "schemaVersion": 1,
+  "id": "codex-normal",
+  "description": "提交、工具、轮次结束和精确提示期限。",
+  "provenance": "synthetic",
+  "sourceVersions": {
+    "codex": "0.162.0-alpha.17.2"
+  },
+  "steps": [
+    {
+      "atMs": 0,
+      "action": {
+        "type": "tick"
+      },
+      "expect": {
+        "state": "idle",
+        "certainty": "unknown",
+        "dominantAgent": null,
+        "pendingCount": 0,
+        "formId": "default",
+        "activeSessions": 0
+      }
+    },
+    {
+      "atMs": 1,
+      "action": {
+        "type": "event",
+        "agent": "codex",
+        "event": "SessionStart",
+        "id": "start",
+        "payload": {
+          "hook_event_name": "SessionStart",
+          "session_id": "session"
+        }
+      },
+      "expect": {
+        "state": "idle",
+        "certainty": "observed",
+        "dominantAgent": "codex",
+        "pendingCount": 0,
+        "formId": "codex"
+      }
+    },
+    {
+      "atMs": 10,
+      "action": {
+        "type": "event",
+        "agent": "codex",
+        "event": "UserPromptSubmit",
+        "id": "prompt",
+        "payload": {
+          "hook_event_name": "UserPromptSubmit",
+          "session_id": "session",
+          "turn_id": "turn"
+        }
+      },
+      "expect": {
+        "state": "thinking",
+        "certainty": "observed",
+        "dominantAgent": "codex",
+        "pendingCount": 0,
+        "formId": "codex"
+      }
+    },
+    {
+      "atMs": 20,
+      "action": {
+        "type": "event",
+        "agent": "codex",
+        "event": "PreToolUse",
+        "id": "tool-start",
+        "payload": {
+          "hook_event_name": "PreToolUse",
+          "session_id": "session",
+          "turn_id": "turn",
+          "tool_use_id": "tool",
+          "tool_name": "read_file"
+        }
+      },
+      "expect": {
+        "state": "working",
+        "certainty": "observed",
+        "dominantAgent": "codex",
+        "pendingCount": 0,
+        "formId": "codex"
+      }
+    },
+    {
+      "atMs": 30,
+      "action": {
+        "type": "event",
+        "agent": "codex",
+        "event": "PostToolUse",
+        "id": "tool-end",
+        "payload": {
+          "hook_event_name": "PostToolUse",
+          "session_id": "session",
+          "turn_id": "turn",
+          "tool_use_id": "tool",
+          "tool_name": "read_file",
+          "tool_response": {
+            "exit_code": 0
+          }
+        }
+      },
+      "expect": {
+        "state": "thinking",
+        "certainty": "observed",
+        "dominantAgent": "codex",
+        "pendingCount": 0,
+        "formId": "codex"
+      }
+    },
+    {
+      "atMs": 40,
+      "action": {
+        "type": "event",
+        "agent": "codex",
+        "event": "Stop",
+        "id": "done",
+        "payload": {
+          "hook_event_name": "Stop",
+          "session_id": "session",
+          "turn_id": "turn"
+        }
+      },
+      "expect": {
+        "state": "done",
+        "certainty": "observed",
+        "dominantAgent": "codex",
+        "pendingCount": 0,
+        "formId": "codex",
+        "bubbleKey": "done"
+      }
+    },
+    {
+      "atMs": 3039,
+      "action": {
+        "type": "tick"
+      },
+      "expect": {
+        "state": "done",
+        "certainty": "observed",
+        "dominantAgent": "codex",
+        "pendingCount": 0,
+        "formId": "codex"
+      }
+    },
+    {
+      "atMs": 3040,
+      "action": {
+        "type": "tick"
+      },
+      "expect": {
+        "state": "idle",
+        "certainty": "observed",
+        "dominantAgent": "codex",
+        "pendingCount": 0,
+        "formId": "codex",
+        "bubbleKey": null
+      }
+    },
+    {
+      "atMs": 3041,
+      "action": {
+        "type": "event",
+        "agent": "codex",
+        "event": "SessionEnd",
+        "id": "end",
+        "payload": {
+          "hook_event_name": "SessionEnd",
+          "session_id": "session"
+        }
+      },
+      "expect": {
+        "state": "idle",
+        "certainty": "unknown",
+        "dominantAgent": null,
+        "pendingCount": 0,
+        "formId": "default",
+        "activeSessions": 0
+      }
+    }
+  ]
+}

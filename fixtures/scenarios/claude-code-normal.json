@@ -1,0 +1,185 @@
+{
+  "schemaVersion": 1,
+  "id": "claude-code-normal",
+  "description": "提交、工具、轮次结束和精确提示期限。",
+  "provenance": "synthetic",
+  "sourceVersions": {
+    "claude-code": "2.1.295"
+  },
+  "steps": [
+    {
+      "atMs": 0,
+      "action": {
+        "type": "tick"
+      },
+      "expect": {
+        "state": "idle",
+        "certainty": "unknown",
+        "dominantAgent": null,
+        "pendingCount": 0,
+        "formId": "default",
+        "activeSessions": 0
+      }
+    },
+    {
+      "atMs": 1,
+      "action": {
+        "type": "event",
+        "agent": "claude-code",
+        "event": "SessionStart",
+        "id": "start",
+        "payload": {
+          "hook_event_name": "SessionStart",
+          "session_id": "session"
+        }
+      },
+      "expect": {
+        "state": "idle",
+        "certainty": "observed",
+        "dominantAgent": "claude-code",
+        "pendingCount": 0,
+        "formId": "claude"
+      }
+    },
+    {
+      "atMs": 10,
+      "action": {
+        "type": "event",
+        "agent": "claude-code",
+        "event": "UserPromptSubmit",
+        "id": "prompt",
+        "payload": {
+          "hook_event_name": "UserPromptSubmit",
+          "session_id": "session",
+          "prompt_id": "turn"
+        }
+      },
+      "expect": {
+        "state": "thinking",
+        "certainty": "observed",
+        "dominantAgent": "claude-code",
+        "pendingCount": 0,
+        "formId": "claude"
+      }
+    },
+    {
+      "atMs": 20,
+      "action": {
+        "type": "event",
+        "agent": "claude-code",
+        "event": "PreToolUse",
+        "id": "tool-start",
+        "payload": {
+          "hook_event_name": "PreToolUse",
+          "session_id": "session",
+          "prompt_id": "turn",
+          "tool_use_id": "tool",
+          "tool_name": "Read"
+        }
+      },
+      "expect": {
+        "state": "working",
+        "certainty": "observed",
+        "dominantAgent": "claude-code",
+        "pendingCount": 0,
+        "formId": "claude"
+      }
+    },
+    {
+      "atMs": 30,
+      "action": {
+        "type": "event",
+        "agent": "claude-code",
+        "event": "PostToolUse",
+        "id": "tool-end",
+        "payload": {
+          "hook_event_name": "PostToolUse",
+          "session_id": "session",
+          "prompt_id": "turn",
+          "tool_use_id": "tool",
+          "tool_name": "Read",
+          "tool_response": {
+            "exit_code": 0
+          }
+        }
+      },
+      "expect": {
+        "state": "thinking",
+        "certainty": "observed",
+        "dominantAgent": "claude-code",
+        "pendingCount": 0,
+        "formId": "claude"
+      }
+    },
+    {
+      "atMs": 40,
+      "action": {
+        "type": "event",
+        "agent": "claude-code",
+        "event": "Stop",
+        "id": "done",
+        "payload": {
+          "hook_event_name": "Stop",
+          "session_id": "session",
+          "prompt_id": "turn"
+        }
+      },
+      "expect": {
+        "state": "done",
+        "certainty": "observed",
+        "dominantAgent": "claude-code",
+        "pendingCount": 0,
+        "formId": "claude",
+        "bubbleKey": "done"
+      }
+    },
+    {
+      "atMs": 3039,
+      "action": {
+        "type": "tick"
+      },
+      "expect": {
+        "state": "done",
+        "certainty": "observed",
+        "dominantAgent": "claude-code",
+        "pendingCount": 0,
+        "formId": "claude"
+      }
+    },
+    {
+      "atMs": 3040,
+      "action": {
+        "type": "tick"
+      },
+      "expect": {
+        "state": "idle",
+        "certainty": "observed",
+        "dominantAgent": "claude-code",
+        "pendingCount": 0,
+        "formId": "claude",
+        "bubbleKey": null
+      }
+    },
+    {
+      "atMs": 3041,
+      "action": {
+        "type": "event",
+        "agent": "claude-code",
+        "event": "SessionEnd",
+        "id": "end",
+        "payload": {
+          "hook_event_name": "SessionEnd",
+          "session_id": "session"
+        }
+      },
+      "expect": {
+        "state": "idle",
+        "certainty": "unknown",
+        "dominantAgent": null,
+        "pendingCount": 0,
+        "formId": "default",
+        "activeSessions": 0
+      }
+    }
+  ]
+}

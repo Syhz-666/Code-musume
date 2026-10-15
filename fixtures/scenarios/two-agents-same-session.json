@@ -1,0 +1,139 @@
+{
+  "schemaVersion": 1,
+  "id": "two-agents-same-session",
+  "description": "同名会话隔离，同优先级保持来源，一家完成后回到另一家的工作。",
+  "provenance": "synthetic",
+  "sourceVersions": {
+    "claude-code": "2.1.295",
+    "codex": "0.162.0-alpha.17.2"
+  },
+  "steps": [
+    {
+      "atMs": 0,
+      "action": {
+        "type": "event",
+        "agent": "claude-code",
+        "event": "PreToolUse",
+        "id": "1",
+        "payload": {
+          "hook_event_name": "PreToolUse",
+          "session_id": "session",
+          "prompt_id": "turn",
+          "tool_use_id": "a"
+        }
+      },
+      "expect": {
+        "state": "working",
+        "certainty": "observed",
+        "dominantAgent": "claude-code",
+        "pendingCount": 0,
+        "formId": "claude",
+        "activeSessions": 1
+      }
+    },
+    {
+      "atMs": 1,
+      "action": {
+        "type": "event",
+        "agent": "codex",
+        "event": "PreToolUse",
+        "id": "2",
+        "payload": {
+          "hook_event_name": "PreToolUse",
+          "session_id": "session",
+          "turn_id": "turn",
+          "tool_use_id": "b"
+        }
+      },
+      "expect": {
+        "state": "working",
+        "certainty": "observed",
+        "dominantAgent": "claude-code",
+        "pendingCount": 0,
+        "formId": "claude",
+        "activeSessions": 2,
+        "sessions": [
+          {
+            "agent": "claude-code",
+            "state": "working",
+            "pendingCount": 0
+          },
+          {
+            "agent": "codex",
+            "state": "working",
+            "pendingCount": 0
+          }
+        ]
+      }
+    },
+    {
+      "atMs": 2,
+      "action": {
+        "type": "event",
+        "agent": "claude-code",
+        "event": "Stop",
+        "id": "3",
+        "payload": {
+          "hook_event_name": "Stop",
+          "session_id": "session",
+          "prompt_id": "turn"
+        }
+      },
+      "expect": {
+        "state": "done",
+        "certainty": "observed",
+        "dominantAgent": "claude-code",
+        "pendingCount": 0,
+        "formId": "claude"
+      }
+    },
+    {
+      "atMs": 3002,
+      "action": {
+        "type": "tick"
+      },
+      "expect": {
+        "state": "working",
+        "certainty": "observed",
+        "dominantAgent": "codex",
+        "pendingCount": 0,
+        "formId": "codex",
+        "activeSessions": 2
+      }
+    },
+    {
+      "atMs": 3003,
+      "action": {
+        "type": "event",
+        "agent": "codex",
+        "event": "Stop",
+        "id": "4",
+        "payload": {
+          "hook_event_name": "Stop",
+          "session_id": "session",
+          "turn_id": "turn"
+        }
+      },
+      "expect": {
+        "state": "done",
+        "certainty": "observed",
+        "dominantAgent": "codex",
+        "pendingCount": 0,
+        "formId": "codex"
+      }
+    },
+    {
+      "atMs": 6003,
+      "action": {
+        "type": "tick"
+      },
+      "expect": {
+        "state": "idle",
+        "certainty": "observed",
+        "dominantAgent": "codex",
+        "pendingCount": 0,
+        "formId": "codex"
+      }
+    }
+  ]
+}

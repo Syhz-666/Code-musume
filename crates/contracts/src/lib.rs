@@ -236,6 +236,17 @@ pub struct Diagnostic {
     pub session_label: Option<String>,
     pub outcome: String,
 }
+
+/// Software-side acknowledgement after the pet has submitted the matching frame.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "bindings", derive(ts_rs::TS))]
+pub struct RenderReceipt {
+    pub instance_id: String,
+    #[cfg_attr(feature = "bindings", ts(type = "number"))]
+    pub revision: u64,
+    pub latency_ms: f64,
+}
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RuntimeFile {

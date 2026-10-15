@@ -108,6 +108,16 @@ button:disabled {
   opacity: 0.5;
   cursor: default;
 }
+.exit-app {
+  padding: 8px 12px;
+  background: #f2eef6;
+  color: #766485;
+  white-space: nowrap;
+}
+.exit-app:hover {
+  background: #faeceb;
+  color: #9b4545;
+}
 nav button {
   background: transparent;
   color: #82768f;

@@ -10,6 +10,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Application, Container, Graphics, Rectangle, Sprite, Texture } from "pixi.js";
 import { invoke, isTauri, preview, watchProjection } from "./bridge";
 import "./pet.css";
+import "virtual:desktop-test";
 
 const defaults: Config = {
   schemaVersion: 1,
@@ -35,11 +36,14 @@ let elapsed = 0,
   visible = true;
 let renderFrames = 0,
   renderSince = performance.now();
+let characterReady = false;
+let receiptScheduled = false;
+let acknowledged = "";
 const motion = matchMedia("(prefers-reduced-motion: reduce)");
 const host = document.getElementById("app");
 if (!host) throw new Error("Missing pet host");
 host.innerHTML =
-  '<div class="bubble" aria-live="polite"></div><div class="character" role="button" aria-label="拖动代码娘"></div><div class="agent-label"></div><button class="settings-button" aria-label="打开设置">⚙</button>';
+  '<div class="bubble" aria-live="polite"></div><div class="character" role="button" aria-label="拖动代码娘"></div><div class="agent-label"></div><button class="exit-button" type="button" aria-label="退出代码娘" title="退出代码娘">退出</button><button class="settings-button" type="button" aria-label="打开设置">⚙</button>';
 const bubble = host.querySelector<HTMLDivElement>(".bubble"),
   stage = host.querySelector<HTMLDivElement>(".character"),
   label = host.querySelector<HTMLDivElement>(".agent-label");
@@ -84,6 +88,18 @@ stageNode.addEventListener("pointerdown", (e) => {
 host.querySelector(".settings-button")?.addEventListener("click", () => {
   if (isTauri()) void invoke("show_settings");
 });
+const exitButton = host.querySelector<HTMLButtonElement>(".exit-button");
+if (exitButton) {
+  exitButton.disabled = !isTauri();
+  exitButton.addEventListener("click", () => {
+    exitButton.disabled = true;
+    void invoke("quit_app").catch(() => {
+      exitButton.disabled = false;
+      bubbleNode.textContent = "退出失败，请从托盘重试";
+      bubbleNode.classList.add("shown");
+    });
+  });
+}
 document.addEventListener("contextmenu", (e) => e.preventDefault());
 document.addEventListener(
   "wheel",
@@ -157,6 +173,7 @@ function clearFrames() {
   domFrame = -1;
 }
 async function loadCharacter(p: Projection) {
+  characterReady = false;
   const epoch = ++loadEpoch;
   let m = manifest;
   if (m?.id !== p.characterId && isTauri()) {
@@ -185,6 +202,10 @@ async function loadCharacter(p: Projection) {
         form: form.id,
       });
       if (epoch !== loadEpoch) return;
+      const image = new Image();
+      image.src = source;
+      await image.decode();
+      if (epoch !== loadEpoch) return;
       if (config.renderer === "dom") {
         const el = stageNode.querySelector<HTMLElement>(".dom-sprite");
         if (el) {
@@ -192,10 +213,6 @@ async function loadCharacter(p: Projection) {
           el.style.display = "block";
         }
       } else {
-        const image = new Image();
-        image.src = source;
-        await image.decode();
-        if (epoch !== loadEpoch) return;
         texture = Texture.from(image);
       }
     } catch {
@@ -210,7 +227,38 @@ async function loadCharacter(p: Projection) {
     ds = stageNode.querySelector<HTMLElement>(".dom-sprite");
   if (el) el.style.display = form?.image ? "none" : "block";
   if (ds && !form?.image) ds.style.display = "none";
+  characterReady = true;
+  submitReceipt();
 }
+function submitReceipt() {
+  if (!isTauri() || !visible || !characterReady || receiptScheduled) return;
+  const key = `${current.instanceId}:${current.revision}:${loadEpoch}`;
+  if (key === acknowledged) return;
+  receiptScheduled = true;
+  requestAnimationFrame(() => {
+    draw(0);
+    app?.render();
+    // A second frame callback follows submission of both canvas and DOM updates.
+    requestAnimationFrame(() => {
+      receiptScheduled = false;
+      if (
+        !visible ||
+        !characterReady ||
+        key !== `${current.instanceId}:${current.revision}:${loadEpoch}`
+      ) {
+        submitReceipt();
+        return;
+      }
+      acknowledged = key;
+      hostNode.dataset.renderedRevision = String(current.revision);
+      void invoke("report_rendered", {
+        instanceId: current.instanceId,
+        revision: current.revision,
+      }).catch(() => {});
+    });
+  });
+}
+const hostNode = host;
 function apply(p: Projection) {
   const changed = p.characterId !== current.characterId || p.formId !== current.formId;
   if (p.state !== current.state) {
@@ -218,6 +266,17 @@ function apply(p: Projection) {
     actionSince = elapsed;
   }
   current = p;
+  Object.assign(hostNode.dataset, {
+    state: p.state,
+    agent: p.dominantAgent ?? "",
+    form: p.formId,
+    certainty: p.certainty,
+    pending: String(p.pendingCount),
+    revision: String(p.revision),
+    instance: p.instanceId,
+    renderer: config.renderer,
+    character: p.characterId,
+  });
   labelNode.textContent =
     p.dominantAgent === "claude-code"
       ? "CLAUDE"
@@ -236,6 +295,7 @@ function apply(p: Projection) {
   if (app)
     app.ticker.maxFPS = reduced() || p.state === "sleeping" ? 1 : p.state === "idle" ? 24 : 60;
   if (changed) void loadCharacter(p);
+  else submitReceipt();
 }
 function draw(delta: number) {
   if (!visible) return;

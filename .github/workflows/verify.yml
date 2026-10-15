@@ -18,6 +18,34 @@ jobs:
       - run: pnpm contracts:generate
       - run: git diff --exit-code -- packages/protocol/src/generated.ts
       - run: pnpm verify
+      - run: pnpm test:tools
       - run: pnpm build
       - run: cargo build --workspace
       - run: powershell -NoProfile -File tools/smoke.ps1
+  desktop-ui:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            tests/desktop/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --dir tests/desktop install --frozen-lockfile
+      - run: pnpm test:ui
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: desktop-ui-evidence
+          path: |
+            .test-artifacts/ui-*/functional-results.json
+            .test-artifacts/ui-*/visual-results.json
+            .test-artifacts/ui-*/cold-start-results.json
+            .test-artifacts/ui-*/render-latencies.json
+            .test-artifacts/ui-*/acceptance.json
+            .test-artifacts/ui-*/*.png

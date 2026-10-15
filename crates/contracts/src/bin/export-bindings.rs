@@ -25,6 +25,7 @@ fn main() {
         Position,
         Config,
         Diagnostic,
+        RenderReceipt,
         Clip,
         CharacterForm,
         CharacterManifest,

@@ -1,5 +1,6 @@
 mod characters;
 mod platform;
+mod render_receipts;
 mod service;
 use code_musume_contracts::*;
 use code_musume_hook::{installer, runtime};
@@ -38,17 +39,19 @@ fn validate_config(c: &Config) -> Result<CharacterManifest, String> {
     }
     Ok(m)
 }
-fn open_settings(app: &AppHandle) {
+fn open_settings(app: &AppHandle) -> Result<(), String> {
     if let Some(w) = app.get_webview_window("settings") {
-        let _ = w.show();
-        let _ = w.set_focus();
+        w.show().map_err(|e| e.to_string())?;
+        w.set_focus().map_err(|e| e.to_string())?;
     } else {
-        let _ = WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("settings.html".into()))
+        WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("settings.html".into()))
             .title("代码娘 · 设置")
             .inner_size(850.0, 760.0)
             .min_inner_size(640.0, 500.0)
-            .build();
+            .build()
+            .map_err(|e| e.to_string())?;
     }
+    Ok(())
 }
 fn apply_visibility(app: &AppHandle, s: &Native, fullscreen: bool) {
     let c = s.config.lock().unwrap().clone();
@@ -170,8 +173,12 @@ fn pet_ready(app: AppHandle, s: State<'_, Arc<Native>>) {
     apply_visibility(&app, &s, platform::fullscreen(&app) && hide);
 }
 #[tauri::command]
-fn show_settings(app: AppHandle) {
-    open_settings(&app);
+async fn show_settings(app: AppHandle) -> Result<(), String> {
+    open_settings(&app)
+}
+#[tauri::command]
+fn quit_app(app: AppHandle) {
+    app.exit(0);
 }
 #[tauri::command]
 async fn list_characters() -> Result<Vec<CharacterManifest>, String> {
@@ -227,6 +234,58 @@ fn report_render_stats(s: State<'_, Arc<Native>>, fps: f64) {
     }
 }
 #[tauri::command]
+fn report_rendered(
+    window: WebviewWindow,
+    s: State<'_, Arc<Native>>,
+    instance_id: String,
+    revision: u64,
+) -> bool {
+    window.label() == "pet"
+        && s.render_receipts.lock().unwrap().acknowledge(
+            &s.runtime.instance_id,
+            &instance_id,
+            revision,
+            std::time::Instant::now(),
+        )
+}
+#[cfg(feature = "e2e")]
+#[tauri::command]
+async fn e2e_advance_clock(s: State<'_, Arc<Native>>, ms: u64) -> Result<Projection, String> {
+    s.advance_clock(ms).await
+}
+#[cfg(feature = "e2e")]
+#[tauri::command]
+async fn e2e_recreate_pet(app: AppHandle) -> Result<(), String> {
+    if let Some(w) = app.get_webview_window("pet") {
+        w.destroy().map_err(|e| e.to_string())?;
+    }
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+    while app.get_webview_window("pet").is_some() {
+        if std::time::Instant::now() > deadline {
+            return Err("测试窗口尚未完成销毁".into());
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    // Keep the settings window alive and reconstruct the production window configuration.
+    let config = app
+        .config()
+        .app
+        .windows
+        .iter()
+        .find(|w| w.label == "pet")
+        .ok_or("missing pet config")?;
+    WebviewWindowBuilder::from_config(&app, config)
+        .map_err(|e| e.to_string())?
+        .build()
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+#[cfg(feature = "e2e")]
+#[tauri::command]
+fn e2e_exit(app: AppHandle) {
+    app.exit(0);
+}
+#[tauri::command]
 fn preview_hooks(
     agent: Agent,
     operation: String,
@@ -269,7 +328,12 @@ fn tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     }
     builder
         .on_menu_event(|app, event| match event.id.as_ref() {
-            "settings" => open_settings(app),
+            "settings" => {
+                let app = app.clone();
+                tauri::async_runtime::spawn_blocking(move || {
+                    let _ = open_settings(&app);
+                });
+            }
             "exit" => app.exit(0),
             id => {
                 let native = app.state::<Arc<Native>>().inner().clone();
@@ -299,7 +363,12 @@ pub fn run() {
         native.cleanup();
         return;
     }
-    let app = tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    #[cfg(feature = "e2e")]
+    let builder = builder
+        .plugin(tauri_plugin_wdio::init())
+        .plugin(tauri_plugin_wdio_webdriver::init());
+    let app = builder
         .plugin(tauri_plugin_single_instance::init(|app, _, _| {
             if let Some(s) = app.try_state::<Arc<Native>>() {
                 let mut c = s.config.lock().unwrap().clone();
@@ -357,6 +426,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             pet_ready,
             show_settings,
+            quit_app,
             subscribe_projection,
             unsubscribe_projection,
             get_projection,
@@ -370,9 +440,16 @@ pub fn run() {
             import_character,
             choose_path,
             report_render_stats,
+            report_rendered,
             preview_hooks,
             apply_hooks,
-            hook_status
+            hook_status,
+            #[cfg(feature = "e2e")]
+            e2e_advance_clock,
+            #[cfg(feature = "e2e")]
+            e2e_recreate_pet,
+            #[cfg(feature = "e2e")]
+            e2e_exit
         ])
         .build(tauri::generate_context!())
         .expect("build code-musume");

@@ -9,7 +9,12 @@ fn event(
     extra: Value,
     id: &str,
 ) -> EnvelopeV2 {
-    let mut p = json!({"session_id":session,"prompt_id":turn,"turn_id":turn});
+    let mut p = json!({"session_id":session});
+    p[if agent == Agent::ClaudeCode {
+        "prompt_id"
+    } else {
+        "turn_id"
+    }] = json!(turn);
     for (k, v) in extra.as_object().unwrap() {
         p[k] = v.clone();
     }

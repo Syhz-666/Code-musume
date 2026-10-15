@@ -158,7 +158,12 @@ function Settings() {
     });
   }
   return (
-    <main className="settings-shell">
+    <main
+      className="settings-shell"
+      data-testid="settings"
+      data-state={p.state}
+      data-pending={p.pendingCount}
+    >
       <header>
         <div className="brand-mark">✦</div>
         <div>
@@ -166,6 +171,15 @@ function Settings() {
           <p>陪你写代码，替工作传个信。</p>
         </div>
         <span className="version">0.1 · Windows</span>
+        <button
+          type="button"
+          className="exit-app"
+          data-testid="exit-app"
+          disabled={!isTauri()}
+          onClick={() => void task(() => invoke<void>("quit_app"))}
+        >
+          退出代码娘
+        </button>
       </header>
       <section className="summary">
         <div>
@@ -189,6 +203,7 @@ function Settings() {
           <button
             type="button"
             key={id}
+            data-testid={`tab-${id}`}
             className={tab === id ? "active" : ""}
             onClick={() => setTab(id ?? "connect")}
           >
@@ -324,6 +339,7 @@ function Settings() {
               当前角色
               <select
                 value={config.characterId}
+                data-testid="character-select"
                 onChange={(e) =>
                   setConfig({
                     ...config,
@@ -348,6 +364,7 @@ function Settings() {
               形态选择
               <select
                 value={config.formLock ?? ""}
+                data-testid="form-select"
                 onChange={(e) => setConfig({ ...config, formLock: e.target.value || null })}
               >
                 <option value="">自动切换</option>
@@ -443,6 +460,7 @@ function Settings() {
                 <input
                   type="checkbox"
                   checked={config[key]}
+                  data-testid={`preference-${key}`}
                   onChange={(e) => setConfig({ ...config, [key]: e.target.checked })}
                 />
               </label>
@@ -451,6 +469,7 @@ function Settings() {
               动画显示方式
               <select
                 value={config.renderer}
+                data-testid="renderer-select"
                 onChange={(e) => setConfig({ ...config, renderer: e.target.value })}
               >
                 <option value="pixi">标准</option>
@@ -551,3 +570,5 @@ if (host) {
     </StrictMode>,
   );
 }
+
+import "virtual:desktop-test";

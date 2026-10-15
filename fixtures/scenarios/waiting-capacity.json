@@ -1,0 +1,211 @@
+{
+  "schemaVersion": 1,
+  "id": "waiting-capacity",
+  "description": "八个等待会话不可回收；第九个拒绝并记录丢失，现有会话可信度降低。",
+  "provenance": "synthetic",
+  "sourceVersions": {
+    "codex": "0.162.0-alpha.17.2"
+  },
+  "steps": [
+    {
+      "atMs": 0,
+      "action": {
+        "type": "event",
+        "agent": "codex",
+        "event": "PermissionRequest",
+        "id": "0",
+        "payload": {
+          "hook_event_name": "PermissionRequest",
+          "session_id": "0",
+          "turn_id": "turn"
+        }
+      },
+      "expect": {
+        "state": "waiting-permission",
+        "certainty": "observed",
+        "dominantAgent": "codex",
+        "pendingCount": 1,
+        "formId": "codex",
+        "activeSessions": 1
+      }
+    },
+    {
+      "atMs": 1,
+      "action": {
+        "type": "event",
+        "agent": "codex",
+        "event": "PermissionRequest",
+        "id": "1",
+        "payload": {
+          "hook_event_name": "PermissionRequest",
+          "session_id": "1",
+          "turn_id": "turn"
+        }
+      },
+      "expect": {
+        "state": "waiting-permission",
+        "certainty": "observed",
+        "dominantAgent": "codex",
+        "pendingCount": 2,
+        "formId": "codex",
+        "activeSessions": 2
+      }
+    },
+    {
+      "atMs": 2,
+      "action": {
+        "type": "event",
+        "agent": "codex",
+        "event": "PermissionRequest",
+        "id": "2",
+        "payload": {
+          "hook_event_name": "PermissionRequest",
+          "session_id": "2",
+          "turn_id": "turn"
+        }
+      },
+      "expect": {
+        "state": "waiting-permission",
+        "certainty": "observed",
+        "dominantAgent": "codex",
+        "pendingCount": 3,
+        "formId": "codex",
+        "activeSessions": 3
+      }
+    },
+    {
+      "atMs": 3,
+      "action": {
+        "type": "event",
+        "agent": "codex",
+        "event": "PermissionRequest",
+        "id": "3",
+        "payload": {
+          "hook_event_name": "PermissionRequest",
+          "session_id": "3",
+          "turn_id": "turn"
+        }
+      },
+      "expect": {
+        "state": "waiting-permission",
+        "certainty": "observed",
+        "dominantAgent": "codex",
+        "pendingCount": 4,
+        "formId": "codex",
+        "activeSessions": 4
+      }
+    },
+    {
+      "atMs": 4,
+      "action": {
+        "type": "event",
+        "agent": "codex",
+        "event": "PermissionRequest",
+        "id": "4",
+        "payload": {
+          "hook_event_name": "PermissionRequest",
+          "session_id": "4",
+          "turn_id": "turn"
+        }
+      },
+      "expect": {
+        "state": "waiting-permission",
+        "certainty": "observed",
+        "dominantAgent": "codex",
+        "pendingCount": 5,
+        "formId": "codex",
+        "activeSessions": 5
+      }
+    },
+    {
+      "atMs": 5,
+      "action": {
+        "type": "event",
+        "agent": "codex",
+        "event": "PermissionRequest",
+        "id": "5",
+        "payload": {
+          "hook_event_name": "PermissionRequest",
+          "session_id": "5",
+          "turn_id": "turn"
+        }
+      },
+      "expect": {
+        "state": "waiting-permission",
+        "certainty": "observed",
+        "dominantAgent": "codex",
+        "pendingCount": 6,
+        "formId": "codex",
+        "activeSessions": 6
+      }
+    },
+    {
+      "atMs": 6,
+      "action": {
+        "type": "event",
+        "agent": "codex",
+        "event": "PermissionRequest",
+        "id": "6",
+        "payload": {
+          "hook_event_name": "PermissionRequest",
+          "session_id": "6",
+          "turn_id": "turn"
+        }
+      },
+      "expect": {
+        "state": "waiting-permission",
+        "certainty": "observed",
+        "dominantAgent": "codex",
+        "pendingCount": 7,
+        "formId": "codex",
+        "activeSessions": 7
+      }
+    },
+    {
+      "atMs": 7,
+      "action": {
+        "type": "event",
+        "agent": "codex",
+        "event": "PermissionRequest",
+        "id": "7",
+        "payload": {
+          "hook_event_name": "PermissionRequest",
+          "session_id": "7",
+          "turn_id": "turn"
+        }
+      },
+      "expect": {
+        "state": "waiting-permission",
+        "certainty": "observed",
+        "dominantAgent": "codex",
+        "pendingCount": 8,
+        "formId": "codex",
+        "activeSessions": 8
+      }
+    },
+    {
+      "atMs": 8,
+      "action": {
+        "type": "event",
+        "agent": "codex",
+        "event": "PermissionRequest",
+        "id": "8",
+        "payload": {
+          "hook_event_name": "PermissionRequest",
+          "session_id": "8",
+          "turn_id": "turn"
+        }
+      },
+      "expect": {
+        "state": "waiting-permission",
+        "certainty": "stale",
+        "dominantAgent": "codex",
+        "pendingCount": 8,
+        "formId": "codex",
+        "activeSessions": 8,
+        "missedEvents": 1
+      },
+      "diagnostic": "session-capacity"
+    }
+  ]
+}

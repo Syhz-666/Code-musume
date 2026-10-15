@@ -1,0 +1,17 @@
+{
+  "identifier": "dev.code-musume.e2e",
+  "build": { "frontendDist": "../dist-e2e" },
+  "app": {
+    "withGlobalTauri": true,
+    "security": {
+      "capabilities": [
+        "pet-capability",
+        {
+          "identifier": "e2e",
+          "windows": ["pet", "settings"],
+          "permissions": ["wdio:default", "wdio-webdriver:default"]
+        }
+      ]
+    }
+  }
+}

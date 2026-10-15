@@ -1,0 +1,103 @@
+{
+  "schemaVersion": 1,
+  "id": "duplicate-notice-deadline",
+  "description": "重复结束提示不延长期限，来源时间不决定超时。",
+  "provenance": "synthetic",
+  "sourceVersions": {
+    "claude-code": "2.1.295"
+  },
+  "steps": [
+    {
+      "atMs": 1,
+      "action": {
+        "type": "event",
+        "agent": "claude-code",
+        "event": "Stop",
+        "id": "same",
+        "payload": {
+          "hook_event_name": "Stop",
+          "session_id": "session",
+          "prompt_id": "turn"
+        },
+        "ts": 8000000000000
+      },
+      "expect": {
+        "state": "done",
+        "certainty": "observed",
+        "dominantAgent": "claude-code",
+        "pendingCount": 0,
+        "formId": "claude"
+      }
+    },
+    {
+      "atMs": 2000,
+      "action": {
+        "type": "event",
+        "agent": "claude-code",
+        "event": "Stop",
+        "id": "same",
+        "payload": {
+          "hook_event_name": "Stop",
+          "session_id": "session",
+          "prompt_id": "turn"
+        }
+      },
+      "expect": {
+        "state": "done",
+        "certainty": "observed",
+        "dominantAgent": "claude-code",
+        "pendingCount": 0,
+        "formId": "claude"
+      },
+      "diagnostic": "duplicate"
+    },
+    {
+      "atMs": 3000,
+      "action": {
+        "type": "tick"
+      },
+      "expect": {
+        "state": "done",
+        "certainty": "observed",
+        "dominantAgent": "claude-code",
+        "pendingCount": 0,
+        "formId": "claude"
+      }
+    },
+    {
+      "atMs": 3001,
+      "action": {
+        "type": "tick"
+      },
+      "expect": {
+        "state": "idle",
+        "certainty": "observed",
+        "dominantAgent": "claude-code",
+        "pendingCount": 0,
+        "formId": "claude"
+      }
+    },
+    {
+      "atMs": 3002,
+      "action": {
+        "type": "event",
+        "agent": "claude-code",
+        "event": "Stop",
+        "id": "new-id",
+        "payload": {
+          "hook_event_name": "Stop",
+          "session_id": "session",
+          "prompt_id": "turn"
+        }
+      },
+      "expect": {
+        "state": "idle",
+        "certainty": "observed",
+        "dominantAgent": "claude-code",
+        "pendingCount": 0,
+        "formId": "claude"
+      },
+      "diagnostic": "closed-turn"
+    }
+  ]
+}
