@@ -117,9 +117,23 @@ pub fn normalize(e: &EnvelopeV2) -> Result<Option<CanonicalEvent>, &'static str>
     if matches!(kind, Kind::ActorStart | Kind::ActorEnd) && actor.is_none() {
         return Err("missing-actor");
     }
-    let fingerprint = v
-        .get("tool_input")
-        .map(|i| format!("{:x}", Sha256::digest(sorted(i).to_string().as_bytes())));
+    let fingerprint = v.get("tool_input").map(|input| {
+        let mut identity = input.clone();
+        // Codex Bash adds an approval-only description absent from Pre/PostToolUse.
+        // Other tools can use description as real input, so keep their identity strict.
+        if e.agent == Agent::Codex
+            && v["tool_name"].as_str() == Some("Bash")
+            && input.get("command").is_some_and(Value::is_string)
+        {
+            if let Some(fields) = identity.as_object_mut() {
+                fields.remove("description");
+            }
+        }
+        format!(
+            "{:x}",
+            Sha256::digest(sorted(&identity).to_string().as_bytes())
+        )
+    });
     Ok(Some(CanonicalEvent {
         agent: e.agent,
         session,

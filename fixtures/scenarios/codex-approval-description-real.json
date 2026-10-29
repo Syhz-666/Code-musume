@@ -1,0 +1,187 @@
+{
+  "schemaVersion": 1,
+  "id": "codex-approval-description-real",
+  "description": "真实 Codex Bash 权限事件附带审批说明；工具完成后必须解除等待，重复接线不重复计数。预期按状态规范确定。",
+  "provenance": "real-redacted",
+  "sourceVersions": {
+    "codex": "0.165.0-alpha.1.2"
+  },
+  "steps": [
+    {
+      "atMs": 0,
+      "action": {
+        "type": "event",
+        "agent": "codex",
+        "event": "PreToolUse",
+        "payload": {
+          "session_id": "sample-d2a1c5f5c35aa101c10b",
+          "turn_id": "sample-d0f0da1a6df61a9c522d",
+          "tool_use_id": "sample-76216820f450f2a90f88",
+          "tool_name": "Bash",
+          "tool_input": {
+            "command": "sample-cc6b2cc3f64aee790f05"
+          },
+          "hook_event_name": "PreToolUse"
+        },
+        "id": "sample-db39fdde3e6864040be4",
+        "ts": 1793259165877
+      },
+      "expect": {
+        "state": "working",
+        "certainty": "observed",
+        "dominantAgent": "codex",
+        "pendingCount": 0,
+        "formId": "codex",
+        "activeSessions": 1
+      },
+      "diagnostic": "applied"
+    },
+    {
+      "atMs": 100,
+      "action": {
+        "type": "event",
+        "agent": "codex",
+        "event": "PreToolUse",
+        "payload": {
+          "session_id": "sample-d2a1c5f5c35aa101c10b",
+          "turn_id": "sample-d0f0da1a6df61a9c522d",
+          "tool_use_id": "sample-76216820f450f2a90f88",
+          "tool_name": "Bash",
+          "tool_input": {
+            "command": "sample-cc6b2cc3f64aee790f05"
+          },
+          "hook_event_name": "PreToolUse"
+        },
+        "id": "sample-e2c2370a7ea66bcece39",
+        "ts": 1793259165886
+      },
+      "expect": {
+        "state": "working",
+        "certainty": "observed",
+        "dominantAgent": "codex",
+        "pendingCount": 0,
+        "formId": "codex",
+        "activeSessions": 1
+      },
+      "diagnostic": "applied"
+    },
+    {
+      "atMs": 200,
+      "action": {
+        "type": "event",
+        "agent": "codex",
+        "event": "PermissionRequest",
+        "payload": {
+          "session_id": "sample-d2a1c5f5c35aa101c10b",
+          "turn_id": "sample-d0f0da1a6df61a9c522d",
+          "tool_name": "Bash",
+          "tool_input": {
+            "command": "sample-cc6b2cc3f64aee790f05",
+            "description": "sample-3579175ebb692f599aab"
+          },
+          "hook_event_name": "PermissionRequest"
+        },
+        "id": "sample-21799aeaf0ba13598b07",
+        "ts": 1793259165895
+      },
+      "expect": {
+        "state": "waiting-permission",
+        "certainty": "observed",
+        "dominantAgent": "codex",
+        "pendingCount": 1,
+        "formId": "codex",
+        "activeSessions": 1
+      },
+      "diagnostic": "applied"
+    },
+    {
+      "atMs": 300,
+      "action": {
+        "type": "event",
+        "agent": "codex",
+        "event": "PermissionRequest",
+        "payload": {
+          "session_id": "sample-d2a1c5f5c35aa101c10b",
+          "turn_id": "sample-d0f0da1a6df61a9c522d",
+          "tool_name": "Bash",
+          "tool_input": {
+            "command": "sample-cc6b2cc3f64aee790f05",
+            "description": "sample-3579175ebb692f599aab"
+          },
+          "hook_event_name": "PermissionRequest"
+        },
+        "id": "sample-535577801e1215bfbe29",
+        "ts": 1793259165912
+      },
+      "expect": {
+        "state": "waiting-permission",
+        "certainty": "observed",
+        "dominantAgent": "codex",
+        "pendingCount": 1,
+        "formId": "codex",
+        "activeSessions": 1
+      },
+      "diagnostic": "duplicate-permission"
+    },
+    {
+      "atMs": 400,
+      "action": {
+        "type": "event",
+        "agent": "codex",
+        "event": "PostToolUse",
+        "payload": {
+          "session_id": "sample-d2a1c5f5c35aa101c10b",
+          "turn_id": "sample-d0f0da1a6df61a9c522d",
+          "tool_use_id": "sample-76216820f450f2a90f88",
+          "tool_name": "Bash",
+          "tool_input": {
+            "command": "sample-cc6b2cc3f64aee790f05"
+          },
+          "tool_response": "sample-c2f5ca5fbd1031194df0",
+          "hook_event_name": "PostToolUse"
+        },
+        "id": "sample-c315dab423ca3d6302af",
+        "ts": 1793259169451
+      },
+      "expect": {
+        "state": "thinking",
+        "certainty": "observed",
+        "dominantAgent": "codex",
+        "pendingCount": 0,
+        "formId": "codex",
+        "activeSessions": 1
+      },
+      "diagnostic": "applied"
+    },
+    {
+      "atMs": 500,
+      "action": {
+        "type": "event",
+        "agent": "codex",
+        "event": "PostToolUse",
+        "payload": {
+          "session_id": "sample-d2a1c5f5c35aa101c10b",
+          "turn_id": "sample-d0f0da1a6df61a9c522d",
+          "tool_use_id": "sample-76216820f450f2a90f88",
+          "tool_name": "Bash",
+          "tool_input": {
+            "command": "sample-cc6b2cc3f64aee790f05"
+          },
+          "tool_response": "sample-c2f5ca5fbd1031194df0",
+          "hook_event_name": "PostToolUse"
+        },
+        "id": "sample-e90ebddce6baf9bcadb3",
+        "ts": 1793259169451
+      },
+      "expect": {
+        "state": "thinking",
+        "certainty": "observed",
+        "dominantAgent": "codex",
+        "pendingCount": 0,
+        "formId": "codex",
+        "activeSessions": 1
+      },
+      "diagnostic": "terminal-tool"
+    }
+  ]
+}

@@ -89,6 +89,38 @@ fn late_permission_cannot_reopen_terminal_tool() {
 }
 
 #[test]
+fn codex_bash_approval_description_does_not_match_a_different_command() {
+    let mut engine = Engine::new("test".into(), Config::default());
+    engine.ingest(e("PreToolUse", "start", r#"{"session_id":"s","turn_id":"t","tool_use_id":"one","tool_name":"Bash","tool_input":{"command":"first"}}"#), 0);
+    engine.ingest(e("PermissionRequest", "permission", r#"{"session_id":"s","turn_id":"t","tool_name":"Bash","tool_input":{"command":"first","description":"approval reason"}}"#), 1);
+    engine.ingest(e("PostToolUse", "other", r#"{"session_id":"s","turn_id":"t","tool_use_id":"two","tool_name":"Bash","tool_input":{"command":"different"}}"#), 2);
+    assert_eq!(engine.snapshot().pending_count, 1);
+    engine.ingest(e("PostToolUse", "finish", r#"{"session_id":"s","turn_id":"t","tool_use_id":"one","tool_name":"Bash","tool_input":{"command":"first"}}"#), 3);
+    assert_eq!(engine.snapshot().pending_count, 0);
+    assert_eq!(engine.snapshot().state, DisplayState::Thinking);
+}
+
+#[test]
+fn claude_bash_description_is_not_treated_as_codex_approval_metadata() {
+    let mut engine = Engine::new("test".into(), Config::default());
+    let mut permission = e(
+        "PermissionRequest",
+        "permission",
+        r#"{"session_id":"s","prompt_id":"t","tool_name":"Bash","tool_input":{"command":"same","description":"first"}}"#,
+    );
+    permission.agent = Agent::ClaudeCode;
+    engine.ingest(permission, 0);
+    let mut finish = e(
+        "PostToolUse",
+        "finish",
+        r#"{"session_id":"s","prompt_id":"t","tool_name":"Bash","tool_input":{"command":"same","description":"different"}}"#,
+    );
+    finish.agent = Agent::ClaudeCode;
+    engine.ingest(finish, 1);
+    assert_eq!(engine.snapshot().pending_count, 1);
+}
+
+#[test]
 fn new_turn_recovers_certainty_without_erasing_loss_diagnostics() {
     let mut engine = Engine::new("test".into(), Config::default());
     engine.ingest(

@@ -8,6 +8,10 @@
   },
   "sources": ["https://code.claude.com/docs/en/hooks", "https://learn.chatgpt.com/docs/hooks"],
   "files": ["claude-tool-start.json", "codex-tool-start.json", "codex-interrupt.json"],
-  "realCapturedSamples": ["captured-claude-2.1.295.json", "captured-claude-20261015.json"],
-  "note": "The files list is synthetic-official. realCapturedSamples contains separately marked, redacted Claude captures. Codex desktop capture and trust acceptance remain required."
+  "realCapturedSamples": [
+    "captured-claude-2.1.295.json",
+    "captured-claude-20261015.json",
+    "captured-codex-20261029.json"
+  ],
+  "note": "The files list is synthetic-official. Real samples are separately marked and redacted. The 2026-10-29 Codex 0.165.0-alpha.1.2 sample covers one local command/approval/completion cycle and duplicate delivery; full desktop and joint-agent acceptance remain required."
 }
