@@ -40,7 +40,8 @@ export const config = {
           CODE_MUSUME_DATA_DIR: join(runDir, "runtime"),
           CODE_MUSUME_CONFIG_DIR: join(runDir, "config"),
           WEBVIEW2_USER_DATA_FOLDER: join(runDir, "webview"),
-          WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: "--force-device-scale-factor=1",
+          WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:
+            "--force-device-scale-factor=1 --force-color-profile=srgb --disable-lcd-text",
         },
       },
     ],
@@ -58,6 +59,8 @@ export const config = {
         const diagnostic = await browser.execute(async () => ({
           projection: await window.__TAURI_INTERNALS__.invoke("get_projection"),
           config: await window.__TAURI_INTERNALS__.invoke("get_config"),
+          diagnostics: await window.__TAURI_INTERNALS__.invoke("get_diagnostics"),
+          preview: await window.__TAURI_INTERNALS__.invoke("get_animation_preview"),
           view: { ...document.querySelector("#app")?.dataset },
           controls: [...document.querySelectorAll("select")].map((e) => ({
             id: e.dataset.testid,

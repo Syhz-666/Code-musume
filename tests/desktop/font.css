@@ -1,0 +1,13 @@
+/* Imported by virtual:desktop-test only in the isolated e2e build. */
+@font-face {
+  font-family: "Code Musume Test";
+  src: url("./fonts/code-musume-test.woff2") format("woff2");
+  font-weight: 100 900;
+  font-display: block;
+}
+html,
+body,
+body * {
+  /* biome-ignore lint/complexity/noImportantStyles: isolate e2e snapshots from every system/font shorthand */
+  font-family: "Code Musume Test", sans-serif !important;
+}

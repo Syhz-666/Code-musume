@@ -22,6 +22,12 @@ jobs:
       - run: pnpm build
       - run: cargo build --workspace
       - run: powershell -NoProfile -File tools/smoke.ps1
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: smoke-failure-evidence
+          path: |
+            .test-artifacts/smoke-*/failure-projection.json
   desktop-ui:
     runs-on: windows-latest
     steps:
@@ -48,4 +54,6 @@ jobs:
             .test-artifacts/ui-*/cold-start-results.json
             .test-artifacts/ui-*/render-latencies.json
             .test-artifacts/ui-*/acceptance.json
+            .test-artifacts/ui-*/failure-*.json
+            .test-artifacts/ui-*/logs/**
             .test-artifacts/ui-*/*.png

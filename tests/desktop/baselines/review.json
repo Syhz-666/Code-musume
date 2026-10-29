@@ -2,309 +2,353 @@
   "schemaVersion": 1,
   "images": {
     "settings-connect": {
-      "sha256": "b2ed94a447c4c3bb1426d5dbaa24dd492d46152480093cc7d97e8cd6748055da",
+      "sha256": "6f766af12df40956053e5696e632d44a0e033f7d65110291b1fdb9735f1ba031",
       "reviewer": "Codex",
       "reviewMode": "user-delegated-agent",
-      "authorization": "用户已明确委托 Codex 完成截图审阅决策；2026-10-29 要求移除桌宠按钮并改用右键菜单",
-      "reviewedAt": "2026-10-29T06:57:53.129Z",
-      "sourceRun": "ui-2026-10-29T06-54-28-222Z",
+      "authorization": "用户此前已明确委托 Codex 完成截图审阅决策；本轮为 CI 截图固定测试字体，已检查完整设置页和桌宠八态候选",
+      "reviewedAt": "2026-10-29T14:32:15.947Z",
+      "sourceRun": "ui-2026-10-29T14-29-23-780Z",
       "environment": {
         "dpr": 1,
+        "font": "\"Code Musume Test\", sans-serif",
         "height": 760,
+        "language": "zh-CN",
         "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0",
         "width": 850
       }
     },
     "settings-character": {
-      "sha256": "f989c61a912bbc0fa673120115de512826c9fed954ef0cca599acf1779672dda",
+      "sha256": "8a1afc538b243d4e18e8491f4a2405c347079c4814ca5a6a6ce57d5b8596f83c",
       "reviewer": "Codex",
       "reviewMode": "user-delegated-agent",
-      "authorization": "用户已明确委托 Codex 完成截图审阅决策；2026-10-29 要求移除桌宠按钮并改用右键菜单",
-      "reviewedAt": "2026-10-29T06:57:53.131Z",
-      "sourceRun": "ui-2026-10-29T06-54-28-222Z",
+      "authorization": "用户此前已明确委托 Codex 完成截图审阅决策；本轮为 CI 截图固定测试字体，已检查完整设置页和桌宠八态候选",
+      "reviewedAt": "2026-10-29T14:32:15.949Z",
+      "sourceRun": "ui-2026-10-29T14-29-23-780Z",
       "environment": {
         "dpr": 1,
+        "font": "\"Code Musume Test\", sans-serif",
         "height": 760,
+        "language": "zh-CN",
         "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0",
         "width": 850
       }
     },
     "settings-preferences": {
-      "sha256": "45a9eeaa116b45361aeaf3dfe49039b5f0bc7e2b070d646b40c0645feab61c60",
+      "sha256": "e234e4af6389a9fc51d40a1ccdbdd382ca6c15750cc6c83e0b001658ac57fc8f",
       "reviewer": "Codex",
       "reviewMode": "user-delegated-agent",
-      "authorization": "用户已明确委托 Codex 完成截图审阅决策；2026-10-29 要求移除桌宠按钮并改用右键菜单",
-      "reviewedAt": "2026-10-29T06:57:53.132Z",
-      "sourceRun": "ui-2026-10-29T06-54-28-222Z",
+      "authorization": "用户此前已明确委托 Codex 完成截图审阅决策；本轮为 CI 截图固定测试字体，已检查完整设置页和桌宠八态候选",
+      "reviewedAt": "2026-10-29T14:32:15.949Z",
+      "sourceRun": "ui-2026-10-29T14-29-23-780Z",
       "environment": {
         "dpr": 1,
+        "font": "\"Code Musume Test\", sans-serif",
         "height": 760,
+        "language": "zh-CN",
         "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0",
         "width": 850
       }
     },
     "settings-diagnostics": {
-      "sha256": "fc439a2bd35dc8af2a209ddf2956d31178724c27bec703c72c6657cb356256b9",
+      "sha256": "f1e86f8c7f2a3254ed64f68921dc3db2b03c9eab601cc9e3766ae1d03caffde0",
       "reviewer": "Codex",
       "reviewMode": "user-delegated-agent",
-      "authorization": "用户已明确委托 Codex 完成截图审阅决策；2026-10-29 要求移除桌宠按钮并改用右键菜单",
-      "reviewedAt": "2026-10-29T06:57:53.133Z",
-      "sourceRun": "ui-2026-10-29T06-54-28-222Z",
+      "authorization": "用户此前已明确委托 Codex 完成截图审阅决策；本轮为 CI 截图固定测试字体，已检查完整设置页和桌宠八态候选",
+      "reviewedAt": "2026-10-29T14:32:15.950Z",
+      "sourceRun": "ui-2026-10-29T14-29-23-780Z",
       "environment": {
         "dpr": 1,
+        "font": "\"Code Musume Test\", sans-serif",
         "height": 760,
+        "language": "zh-CN",
         "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0",
         "width": 850
       }
     },
     "pixi-idle": {
-      "sha256": "2203762ed1ce68a7b2ef6ca73b9e60f4ed18a52dc51060de4064291284b8ba82",
+      "sha256": "98861b18bf0e961a82002c3546a953a9d34a3a2f460b46ae819925340bab495f",
       "reviewer": "Codex",
       "reviewMode": "user-delegated-agent",
-      "authorization": "用户已明确委托 Codex 完成截图审阅决策；2026-10-29 要求移除桌宠按钮并改用右键菜单",
-      "reviewedAt": "2026-10-29T06:57:53.133Z",
-      "sourceRun": "ui-2026-10-29T06-54-28-222Z",
+      "authorization": "用户此前已明确委托 Codex 完成截图审阅决策；本轮为 CI 截图固定测试字体，已检查完整设置页和桌宠八态候选",
+      "reviewedAt": "2026-10-29T14:32:15.950Z",
+      "sourceRun": "ui-2026-10-29T14-29-23-780Z",
       "environment": {
         "dpr": 1,
+        "font": "\"Code Musume Test\", sans-serif",
         "height": 210,
+        "language": "zh-CN",
         "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0",
         "width": 160
       }
     },
     "pixi-thinking": {
-      "sha256": "edb0cb759ef12145c79eceed124e854f6096d017ca86b510aab10071fda7a4f4",
+      "sha256": "1f37046247c5714f6a976b033973b1ce0ed7f9ac45083877cdf9c2bab2d7764b",
       "reviewer": "Codex",
       "reviewMode": "user-delegated-agent",
-      "authorization": "用户已明确委托 Codex 完成截图审阅决策；2026-10-29 要求移除桌宠按钮并改用右键菜单",
-      "reviewedAt": "2026-10-29T06:57:53.134Z",
-      "sourceRun": "ui-2026-10-29T06-54-28-222Z",
+      "authorization": "用户此前已明确委托 Codex 完成截图审阅决策；本轮为 CI 截图固定测试字体，已检查完整设置页和桌宠八态候选",
+      "reviewedAt": "2026-10-29T14:32:15.951Z",
+      "sourceRun": "ui-2026-10-29T14-29-23-780Z",
       "environment": {
         "dpr": 1,
+        "font": "\"Code Musume Test\", sans-serif",
         "height": 210,
+        "language": "zh-CN",
         "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0",
         "width": 160
       }
     },
     "pixi-working": {
-      "sha256": "9dd325bbd9b9a76ed89899c1324c3a91b5a5bce7f05f3611579d95dc3c5bcda9",
+      "sha256": "d10d134510d9f6ea0d49cbfd989934cb862e26172405ae4f906d09a8fb0e60de",
       "reviewer": "Codex",
       "reviewMode": "user-delegated-agent",
-      "authorization": "用户要求矫正干活中腿部杂色；沿用已委托的截图审阅，已检查实际双渲染模式及工作进入、持续、退出截图",
-      "reviewedAt": "2026-10-29T13:05:18.736401Z",
-      "sourceRun": "ui-20261029-working-colors-review",
+      "authorization": "用户此前已明确委托 Codex 完成截图审阅决策；本轮为 CI 截图固定测试字体，已检查完整设置页和桌宠八态候选",
+      "reviewedAt": "2026-10-29T14:32:15.952Z",
+      "sourceRun": "ui-2026-10-29T14-29-23-780Z",
       "environment": {
         "dpr": 1,
+        "font": "\"Code Musume Test\", sans-serif",
         "height": 210,
+        "language": "zh-CN",
         "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0",
         "width": 160
       }
     },
     "pixi-waiting": {
-      "sha256": "8cc94b3d06d138305b968e07ba7f7e45cd1305609b3b69a1585fc3f4916b00a5",
+      "sha256": "640579052b1397b5ee2f58db09ea0fe17f625d743186d125fb458bf2190e79ff",
       "reviewer": "Codex",
       "reviewMode": "user-delegated-agent",
-      "authorization": "用户已明确委托 Codex 完成截图审阅决策；2026-10-29 要求移除桌宠按钮并改用右键菜单",
-      "reviewedAt": "2026-10-29T06:57:53.136Z",
-      "sourceRun": "ui-2026-10-29T06-54-28-222Z",
+      "authorization": "用户此前已明确委托 Codex 完成截图审阅决策；本轮为 CI 截图固定测试字体，已检查完整设置页和桌宠八态候选",
+      "reviewedAt": "2026-10-29T14:32:15.952Z",
+      "sourceRun": "ui-2026-10-29T14-29-23-780Z",
       "environment": {
         "dpr": 1,
+        "font": "\"Code Musume Test\", sans-serif",
         "height": 210,
+        "language": "zh-CN",
         "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0",
         "width": 160
       }
     },
     "pixi-notification": {
-      "sha256": "c2d7b1fb325cef046e75426d6240bc37695cb0b36a50b699e1e7e9d647bb0365",
+      "sha256": "eca82d4f56a62ee53eb2cd53e84e76ff6fa03d06783a046ed5fb98ea195acbc0",
       "reviewer": "Codex",
       "reviewMode": "user-delegated-agent",
-      "authorization": "用户已明确委托 Codex 完成截图审阅决策；2026-10-29 要求移除桌宠按钮并改用右键菜单",
-      "reviewedAt": "2026-10-29T06:57:53.137Z",
-      "sourceRun": "ui-2026-10-29T06-54-28-222Z",
+      "authorization": "用户此前已明确委托 Codex 完成截图审阅决策；本轮为 CI 截图固定测试字体，已检查完整设置页和桌宠八态候选",
+      "reviewedAt": "2026-10-29T14:32:15.953Z",
+      "sourceRun": "ui-2026-10-29T14-29-23-780Z",
       "environment": {
         "dpr": 1,
+        "font": "\"Code Musume Test\", sans-serif",
         "height": 210,
+        "language": "zh-CN",
         "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0",
         "width": 160
       }
     },
     "pixi-error": {
-      "sha256": "317059d1996876ff1d908d27bcae1015cc87836f183c169aa23627fe01911001",
+      "sha256": "bfd485bf5f37702cf966fdc0cb0f17952b4b38607be8ca1ac03717406744482f",
       "reviewer": "Codex",
       "reviewMode": "user-delegated-agent",
-      "authorization": "用户已明确委托 Codex 完成截图审阅决策；2026-10-29 要求移除桌宠按钮并改用右键菜单",
-      "reviewedAt": "2026-10-29T06:57:53.138Z",
-      "sourceRun": "ui-2026-10-29T06-54-28-222Z",
+      "authorization": "用户此前已明确委托 Codex 完成截图审阅决策；本轮为 CI 截图固定测试字体，已检查完整设置页和桌宠八态候选",
+      "reviewedAt": "2026-10-29T14:32:15.954Z",
+      "sourceRun": "ui-2026-10-29T14-29-23-780Z",
       "environment": {
         "dpr": 1,
+        "font": "\"Code Musume Test\", sans-serif",
         "height": 210,
+        "language": "zh-CN",
         "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0",
         "width": 160
       }
     },
     "pixi-done": {
-      "sha256": "82746224a6ead5240b47a5be92959718f833ec1f034670934556562623198cb2",
+      "sha256": "a6aaf41e199c0abb2a18f7c6941f49bb3c3743d16d14b37fb8419e80b9afc610",
       "reviewer": "Codex",
       "reviewMode": "user-delegated-agent",
-      "authorization": "用户已明确委托 Codex 完成截图审阅决策；2026-10-29 要求移除桌宠按钮并改用右键菜单",
-      "reviewedAt": "2026-10-29T06:57:53.138Z",
-      "sourceRun": "ui-2026-10-29T06-54-28-222Z",
+      "authorization": "用户此前已明确委托 Codex 完成截图审阅决策；本轮为 CI 截图固定测试字体，已检查完整设置页和桌宠八态候选",
+      "reviewedAt": "2026-10-29T14:32:15.954Z",
+      "sourceRun": "ui-2026-10-29T14-29-23-780Z",
       "environment": {
         "dpr": 1,
+        "font": "\"Code Musume Test\", sans-serif",
         "height": 210,
+        "language": "zh-CN",
         "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0",
         "width": 160
       }
     },
     "pixi-sleeping": {
-      "sha256": "bbdf82f8f0bc32ea3f7c888a21941decf4ff7d3d6b7353a4ca622c4d7b65ecce",
+      "sha256": "e28bb0412596c77578e1d3acf845adb0745c471a0f6fc85f6064c982b255a19f",
       "reviewer": "Codex",
       "reviewMode": "user-delegated-agent",
-      "authorization": "用户已明确委托 Codex 完成截图审阅决策；2026-10-29 要求移除桌宠按钮并改用右键菜单",
-      "reviewedAt": "2026-10-29T06:57:53.139Z",
-      "sourceRun": "ui-2026-10-29T06-54-28-222Z",
+      "authorization": "用户此前已明确委托 Codex 完成截图审阅决策；本轮为 CI 截图固定测试字体，已检查完整设置页和桌宠八态候选",
+      "reviewedAt": "2026-10-29T14:32:15.955Z",
+      "sourceRun": "ui-2026-10-29T14-29-23-780Z",
       "environment": {
         "dpr": 1,
+        "font": "\"Code Musume Test\", sans-serif",
         "height": 210,
+        "language": "zh-CN",
         "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0",
         "width": 160
       }
     },
     "dom-idle": {
-      "sha256": "40024c58767c44a5d2c349318fba3b0e409ee5203b5dd93e08ecc3e44a828c92",
+      "sha256": "81826c06eee73464df7a01b33b080fc97be630398cac01283bcae323f36c5dee",
       "reviewer": "Codex",
       "reviewMode": "user-delegated-agent",
-      "authorization": "用户已明确委托 Codex 完成截图审阅决策；2026-10-29 要求移除桌宠按钮并改用右键菜单",
-      "reviewedAt": "2026-10-29T06:57:53.140Z",
-      "sourceRun": "ui-2026-10-29T06-54-28-222Z",
+      "authorization": "用户此前已明确委托 Codex 完成截图审阅决策；本轮为 CI 截图固定测试字体，已检查完整设置页和桌宠八态候选",
+      "reviewedAt": "2026-10-29T14:32:15.955Z",
+      "sourceRun": "ui-2026-10-29T14-29-23-780Z",
       "environment": {
         "dpr": 1,
+        "font": "\"Code Musume Test\", sans-serif",
         "height": 210,
+        "language": "zh-CN",
         "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0",
         "width": 160
       }
     },
     "dom-thinking": {
-      "sha256": "3a6e5477d22e67e4618cf25cc716d5dd483e5e811ec92451e2a41ff1aa5d957b",
+      "sha256": "186ba646b6141f005c548a7b5d965052e839343c4d9fabf829534d95d65f09f1",
       "reviewer": "Codex",
       "reviewMode": "user-delegated-agent",
-      "authorization": "用户已明确委托 Codex 完成截图审阅决策；2026-10-29 要求移除桌宠按钮并改用右键菜单",
-      "reviewedAt": "2026-10-29T06:57:53.140Z",
-      "sourceRun": "ui-2026-10-29T06-54-28-222Z",
+      "authorization": "用户此前已明确委托 Codex 完成截图审阅决策；本轮为 CI 截图固定测试字体，已检查完整设置页和桌宠八态候选",
+      "reviewedAt": "2026-10-29T14:32:15.956Z",
+      "sourceRun": "ui-2026-10-29T14-29-23-780Z",
       "environment": {
         "dpr": 1,
+        "font": "\"Code Musume Test\", sans-serif",
         "height": 210,
+        "language": "zh-CN",
         "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0",
         "width": 160
       }
     },
     "dom-working": {
-      "sha256": "6337a4374e1dc49960f9b6cc78937bae2c7849639ea8d1895f2604e1f24746e6",
+      "sha256": "173d2e54b214f8bf6bbbae86235f342bf8d5f0874e2d847e4de1849e72bae1e1",
       "reviewer": "Codex",
       "reviewMode": "user-delegated-agent",
-      "authorization": "用户要求矫正干活中腿部杂色；沿用已委托的截图审阅，已检查实际双渲染模式及工作进入、持续、退出截图",
-      "reviewedAt": "2026-10-29T13:05:18.745445Z",
-      "sourceRun": "ui-20261029-working-colors-review",
+      "authorization": "用户此前已明确委托 Codex 完成截图审阅决策；本轮为 CI 截图固定测试字体，已检查完整设置页和桌宠八态候选",
+      "reviewedAt": "2026-10-29T14:32:15.957Z",
+      "sourceRun": "ui-2026-10-29T14-29-23-780Z",
       "environment": {
         "dpr": 1,
+        "font": "\"Code Musume Test\", sans-serif",
         "height": 210,
+        "language": "zh-CN",
         "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0",
         "width": 160
       }
     },
     "dom-waiting": {
-      "sha256": "a9b45bf4fdf4b06a68bf25df1994ec2ac80c60031191527e33b0cad122e9cc58",
+      "sha256": "19d97f62056ff256de213751a91e7504a829ef76d04c15651b73aa4826db1fc9",
       "reviewer": "Codex",
       "reviewMode": "user-delegated-agent",
-      "authorization": "用户已明确委托 Codex 完成截图审阅决策；2026-10-29 要求移除桌宠按钮并改用右键菜单",
-      "reviewedAt": "2026-10-29T06:57:53.141Z",
-      "sourceRun": "ui-2026-10-29T06-54-28-222Z",
+      "authorization": "用户此前已明确委托 Codex 完成截图审阅决策；本轮为 CI 截图固定测试字体，已检查完整设置页和桌宠八态候选",
+      "reviewedAt": "2026-10-29T14:32:15.957Z",
+      "sourceRun": "ui-2026-10-29T14-29-23-780Z",
       "environment": {
         "dpr": 1,
+        "font": "\"Code Musume Test\", sans-serif",
         "height": 210,
+        "language": "zh-CN",
         "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0",
         "width": 160
       }
     },
     "dom-notification": {
-      "sha256": "18b379445e8b17fbe9481590a59296e16c4f6fec9b3fe82049523a7815e9135e",
+      "sha256": "237dfbd887805c6b2e5840aaf63772a4d5f2f6aed91223553c4cc9d118df9669",
       "reviewer": "Codex",
       "reviewMode": "user-delegated-agent",
-      "authorization": "用户已明确委托 Codex 完成截图审阅决策；2026-10-29 要求移除桌宠按钮并改用右键菜单",
-      "reviewedAt": "2026-10-29T06:57:53.142Z",
-      "sourceRun": "ui-2026-10-29T06-54-28-222Z",
+      "authorization": "用户此前已明确委托 Codex 完成截图审阅决策；本轮为 CI 截图固定测试字体，已检查完整设置页和桌宠八态候选",
+      "reviewedAt": "2026-10-29T14:32:15.958Z",
+      "sourceRun": "ui-2026-10-29T14-29-23-780Z",
       "environment": {
         "dpr": 1,
+        "font": "\"Code Musume Test\", sans-serif",
         "height": 210,
+        "language": "zh-CN",
         "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0",
         "width": 160
       }
     },
     "dom-error": {
-      "sha256": "886da9080b395211d58683ba83f311cf54aa4095f8832d98f928c18bd90a41d0",
+      "sha256": "df3ea3e839d96827d4c67d327e57f4e90d8a2e1d72f46278955bd15ed302d591",
       "reviewer": "Codex",
       "reviewMode": "user-delegated-agent",
-      "authorization": "用户已明确委托 Codex 完成截图审阅决策；2026-10-29 要求移除桌宠按钮并改用右键菜单",
-      "reviewedAt": "2026-10-29T06:57:53.142Z",
-      "sourceRun": "ui-2026-10-29T06-54-28-222Z",
+      "authorization": "用户此前已明确委托 Codex 完成截图审阅决策；本轮为 CI 截图固定测试字体，已检查完整设置页和桌宠八态候选",
+      "reviewedAt": "2026-10-29T14:32:15.958Z",
+      "sourceRun": "ui-2026-10-29T14-29-23-780Z",
       "environment": {
         "dpr": 1,
+        "font": "\"Code Musume Test\", sans-serif",
         "height": 210,
+        "language": "zh-CN",
         "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0",
         "width": 160
       }
     },
     "dom-done": {
-      "sha256": "36b930a78a9df90b80f69725a898d5a51769e48dc625bea1388290a2059e206f",
+      "sha256": "e3832dac02472094d37e94a424ac657c2cd3b15d64e95a27b158f45518b3574b",
       "reviewer": "Codex",
       "reviewMode": "user-delegated-agent",
-      "authorization": "用户已明确委托 Codex 完成截图审阅决策；2026-10-29 要求移除桌宠按钮并改用右键菜单",
-      "reviewedAt": "2026-10-29T06:57:53.143Z",
-      "sourceRun": "ui-2026-10-29T06-54-28-222Z",
+      "authorization": "用户此前已明确委托 Codex 完成截图审阅决策；本轮为 CI 截图固定测试字体，已检查完整设置页和桌宠八态候选",
+      "reviewedAt": "2026-10-29T14:32:15.959Z",
+      "sourceRun": "ui-2026-10-29T14-29-23-780Z",
       "environment": {
         "dpr": 1,
+        "font": "\"Code Musume Test\", sans-serif",
         "height": 210,
+        "language": "zh-CN",
         "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0",
         "width": 160
       }
     },
     "dom-sleeping": {
-      "sha256": "615d06b5a39b20a38b0b201fc96c954c3a3dc4ea27aac2491b15bc496a057aee",
+      "sha256": "98f4bc29d8116e04e96ad8a8916eb5db88a7ab96350da45fba617e3e586bee24",
       "reviewer": "Codex",
       "reviewMode": "user-delegated-agent",
-      "authorization": "用户已明确委托 Codex 完成截图审阅决策；2026-10-29 要求移除桌宠按钮并改用右键菜单",
-      "reviewedAt": "2026-10-29T06:57:53.144Z",
-      "sourceRun": "ui-2026-10-29T06-54-28-222Z",
+      "authorization": "用户此前已明确委托 Codex 完成截图审阅决策；本轮为 CI 截图固定测试字体，已检查完整设置页和桌宠八态候选",
+      "reviewedAt": "2026-10-29T14:32:15.960Z",
+      "sourceRun": "ui-2026-10-29T14-29-23-780Z",
       "environment": {
         "dpr": 1,
+        "font": "\"Code Musume Test\", sans-serif",
         "height": 210,
+        "language": "zh-CN",
         "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0",
         "width": 160
       }
     },
     "both-restore-codex": {
-      "sha256": "359997c1e1c2cf446798b03b0abbe0aa97de12165363da76c474b9bd983ff13d",
+      "sha256": "c6c5d0f15713bafb56eed6768a953a0142e6b31d15c641f0f8f9fb9396c483a5",
       "reviewer": "Codex",
       "reviewMode": "user-delegated-agent",
-      "authorization": "用户要求矫正干活中腿部杂色；沿用已委托的截图审阅，已检查实际双渲染模式及工作进入、持续、退出截图",
-      "reviewedAt": "2026-10-29T13:05:18.760814Z",
-      "sourceRun": "ui-20261029-working-colors-review",
+      "authorization": "用户此前已明确委托 Codex 完成截图审阅决策；本轮为 CI 截图固定测试字体，已检查完整设置页和桌宠八态候选",
+      "reviewedAt": "2026-10-29T14:32:15.960Z",
+      "sourceRun": "ui-2026-10-29T14-29-23-780Z",
       "environment": {
         "dpr": 1,
+        "font": "\"Code Musume Test\", sans-serif",
         "height": 210,
+        "language": "zh-CN",
         "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0",
         "width": 160
       }
     },
     "imported-character": {
-      "sha256": "73cd8b0bf2e4c04f4db3030bc96b2170e2e365d0e11af00eb4fe24c277645297",
+      "sha256": "b320a8f01e12f44d60cc537f3a72d30e0fd0dfccd7abdd534ed7afdb2a3b7a28",
       "reviewer": "Codex",
       "reviewMode": "user-delegated-agent",
-      "authorization": "用户已明确委托 Codex 完成截图审阅决策；2026-10-29 要求移除桌宠按钮并改用右键菜单",
-      "reviewedAt": "2026-10-29T06:57:53.145Z",
-      "sourceRun": "ui-2026-10-29T06-54-28-222Z",
+      "authorization": "用户此前已明确委托 Codex 完成截图审阅决策；本轮为 CI 截图固定测试字体，已检查完整设置页和桌宠八态候选",
+      "reviewedAt": "2026-10-29T14:32:15.961Z",
+      "sourceRun": "ui-2026-10-29T14-29-23-780Z",
       "environment": {
         "dpr": 1,
+        "font": "\"Code Musume Test\", sans-serif",
         "height": 210,
+        "language": "zh-CN",
         "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0",
         "width": 160
       }

@@ -15,6 +15,7 @@ import { createRoot } from "react-dom/client";
 import { invoke, isTauri, preview, watchAnimationPreview, watchProjection } from "./bridge";
 import { builtinManifest } from "./builtin-character";
 import "./settings.css";
+import "virtual:desktop-test";
 
 const defaults: Config = {
   schemaVersion: 1,

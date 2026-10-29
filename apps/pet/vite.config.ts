@@ -20,7 +20,8 @@ export default defineConfig({
             import.meta.url,
           ),
         );
-        return `import ${JSON.stringify(entry.replaceAll("\\", "/"))};`;
+        const fontStyle = fileURLToPath(new URL("../../tests/desktop/font.css", import.meta.url));
+        return `import ${JSON.stringify(entry.replaceAll("\\", "/"))};import ${JSON.stringify(fontStyle.replaceAll("\\", "/"))};`;
       },
     },
   ],

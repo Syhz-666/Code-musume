@@ -20,6 +20,7 @@ import {
 const cc = "claude-code",
   cx = "codex";
 describe("Actual desktop event chain and settings", () => {
+  let initialConfig;
   before(async () => {
     await browser.setTimeout({ script: 2000 });
     await selectWindow("pet");
@@ -28,6 +29,18 @@ describe("Actual desktop event chain and settings", () => {
     assert.equal(await (await browser.$(".character")).getAttribute("title"), "右键打开菜单");
     // Native menus are exercised separately through Windows computer use.
     await nativeInvoke("show_settings");
+    await selectWindow("settings");
+    initialConfig = await nativeInvoke("get_config");
+  });
+  beforeEach(async () => {
+    // Each case owns its state, including after a failed screenshot/assertion.
+    await selectWindow("settings");
+    await nativeInvoke("set_config", { config: initialConfig });
+    await nativeInvoke("reset_sessions");
+    await browser.refresh();
+    await selectWindow("pet");
+    await browser.refresh();
+    await pet({ state: "idle", animationMode: "real", renderer: initialConfig.renderer });
     await selectWindow("settings");
   });
   it("opens all four settings pages and checks their visible content", async () => {
@@ -434,6 +447,8 @@ describe("Actual desktop event chain and settings", () => {
     await screenshot("both-restore-codex");
   });
   it("saves form settings through controls and preserves them across page reload", async () => {
+    await hook(cx, "PreToolUse", { tool_use_id: "form-settings" });
+    await pet({ state: "working", agent: cx, form: "codex" });
     await tab("角色与形态");
     await choose('[data-testid="form-select"]', "claude");
     await (await browser.$("button=保存角色选择")).click();
@@ -668,6 +683,8 @@ describe("Actual desktop event chain and settings", () => {
   });
   it("recovers the latest snapshot after hiding, refreshing and recreating the pet window", async () => {
     await tab("使用偏好");
+    // Leave an explicitly saved DOM preference for the separate restart check.
+    await choose('[data-testid="renderer-select"]', "dom");
     const hidden = await browser.$('[data-testid="preference-userHidden"]');
     await hidden.click();
     await (await browser.$("button=保存使用偏好")).click();
@@ -695,6 +712,7 @@ describe("Actual desktop event chain and settings", () => {
   });
   after(() => {
     const pending = visuals.filter((v) => v.status === "pending-review");
+    const failed = visuals.filter((v) => v.status === "failed");
     writeFileSync(
       join(runDir, "acceptance.json"),
       JSON.stringify(
@@ -717,6 +735,11 @@ describe("Actual desktop event chain and settings", () => {
       pending.length,
       0,
       `${pending.length} screenshot baselines need human review; candidates: ${runDir}`,
+    );
+    assert.equal(
+      failed.length,
+      0,
+      `Screenshot differences: ${failed.map((v) => v.name).join(", ")}`,
     );
   });
 });

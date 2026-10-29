@@ -45,6 +45,21 @@ export async function selectWindow(label, { prepare = true } = {}) {
     { timeoutMsg: `Window ${label} is not initialized` },
   );
   if (!prepare) return;
+  await browser.waitUntil(
+    async () => {
+      try {
+        return await browser.execute(async () => {
+          const faces = await document.fonts.load('12px "Code Musume Test"');
+          await document.fonts.ready;
+          return faces.length > 0 && document.fonts.check('12px "Code Musume Test"');
+        });
+      } catch (error) {
+        if (isNavigationTimeout(error)) return false;
+        throw error;
+      }
+    },
+    { timeoutMsg: "Bundled screenshot font did not load" },
+  );
   const isPet = label === "pet";
   await browser.waitUntil(
     async () => {
@@ -130,22 +145,29 @@ export async function hook(agent, event, extra = {}, session = "ui-session", tur
 }
 export async function pet(expected, { latency = false, prepare = true } = {}) {
   await selectWindow("pet", { prepare });
-  await browser.waitUntil(
-    async () => {
-      let actual;
-      try {
-        actual = await browser.execute(() => ({ ...document.querySelector("#app")?.dataset }));
-      } catch (error) {
-        if (isNavigationTimeout(error)) return false;
-        throw error;
-      }
-      return (
-        Object.entries(expected).every(([k, v]) => actual[k] === String(v)) &&
-        actual.revision === actual.renderedRevision
-      );
-    },
-    { timeoutMsg: `Pet did not render ${JSON.stringify(expected)}` },
-  );
+  let lastActual;
+  await browser
+    .waitUntil(
+      async () => {
+        let actual;
+        try {
+          actual = await browser.execute(() => ({ ...document.querySelector("#app")?.dataset }));
+        } catch (error) {
+          if (isNavigationTimeout(error)) return false;
+          throw error;
+        }
+        lastActual = actual;
+        return (
+          Object.entries(expected).every(([k, v]) => actual[k] === String(v)) &&
+          actual.revision === actual.renderedRevision
+        );
+      },
+      { timeoutMsg: `Pet did not render ${JSON.stringify(expected)}` },
+    )
+    .catch((error) => {
+      error.message += `; last view: ${JSON.stringify(lastActual)}`;
+      throw error;
+    });
   if (latency) {
     const result = await health();
     assert.equal(result.renderReceipt?.instanceId, result.projection.instanceId);
@@ -216,6 +238,8 @@ export async function screenshot(name) {
     width: innerWidth,
     height: innerHeight,
     userAgent: navigator.userAgent,
+    font: getComputedStyle(document.body).fontFamily,
+    language: navigator.language,
   }));
   assert.equal(environment.dpr, 1, "Visual baseline requires controlled DPR=1");
   const bytes = Buffer.from(await browser.takeScreenshot(), "base64");
@@ -251,7 +275,8 @@ export async function screenshot(name) {
     writeFileSync(join(runDir, `${name}.diff.png`), PNG.sync.write(diff));
     visuals.push({ name, status: ratio <= 0.005 ? "passed" : "failed", ratio, environment });
     writeFileSync(join(runDir, "visual-results.json"), JSON.stringify(visuals, null, 2));
-    assert(ratio <= 0.005, `${name}: ${(ratio * 100).toFixed(2)}% image difference exceeds 0.5%`);
+    // Keep exercising the remaining states. The suite's final hook fails on any
+    // visual mismatch, without leaving a permission/preview state mid-scenario.
   }
   writeFileSync(join(runDir, "visual-results.json"), JSON.stringify(visuals, null, 2));
 }

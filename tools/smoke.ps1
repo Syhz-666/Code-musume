@@ -18,6 +18,9 @@ $checks=[System.Collections.Generic.List[string]]::new()
 function Assert-That($value,[string]$label){if(-not $value){throw ('FAILED: '+$label)};$checks.Add($label)}
 function Send-Hook([string]$agent,[string]$event,[hashtable]$payload){
     $payload.hook_event_name=$event
+    # Preparing a fixture must not consume the hook's 300ms process budget.
+    # ConvertTo-Json can take longer on its first Windows PowerShell invocation.
+    $bytes=[Text.Encoding]::UTF8.GetBytes(($payload|ConvertTo-Json -Depth 20 -Compress))
     $info=New-Object System.Diagnostics.ProcessStartInfo
     $info.FileName=$cli
     $info.Arguments='--agent '+$agent+' --event '+$event+' --runtime '+$mode
@@ -25,7 +28,6 @@ function Send-Hook([string]$agent,[string]$event,[hashtable]$payload){
     $info.RedirectStandardInput=$true;$info.RedirectStandardOutput=$true;$info.RedirectStandardError=$true
     $process=New-Object System.Diagnostics.Process
     $process.StartInfo=$info;[void]$process.Start()
-    $bytes=[Text.Encoding]::UTF8.GetBytes(($payload|ConvertTo-Json -Depth 20 -Compress))
     $process.StandardInput.BaseStream.Write($bytes,0,$bytes.Length);$process.StandardInput.Close()
     Assert-That ($process.WaitForExit(1500)) 'hook deadline'
     Assert-That ($process.ExitCode -eq 0 -and $process.StandardOutput.ReadToEnd() -eq '' -and $process.StandardError.ReadToEnd() -eq '') 'silent hook'
@@ -40,6 +42,16 @@ try {
     $url='http://127.0.0.1:'+$r.port
     $headers=@{Authorization='Bearer '+$r.token}
     function Snapshot { (Invoke-RestMethod -Uri ($url+'/v2/health') -Headers $headers -TimeoutSec 2).projection }
+    function Await-Snapshot([scriptblock]$condition,[string]$label){
+        $deadline=[DateTime]::UtcNow.AddMilliseconds(1000)
+        do {
+            $snapshot=Snapshot
+            if((& $condition $snapshot)){Assert-That $true $label;return $snapshot}
+            Start-Sleep -Milliseconds 20
+        } while([DateTime]::UtcNow -lt $deadline)
+        $snapshot|ConvertTo-Json -Depth 4|Set-Content -LiteralPath (Join-Path $case 'failure-projection.json') -Encoding UTF8
+        throw ('FAILED: '+$label+'; state='+$snapshot.state+'; pending='+$snapshot.pendingCount+'; missed='+$snapshot.missedEvents+'; evidence='+$case)
+    }
     function Check-Rejection([hashtable]$requestHeaders,[int]$expected){try{Invoke-WebRequest -UseBasicParsing -Uri ($url+'/v2/health') -Headers $requestHeaders -TimeoutSec 2|Out-Null;throw 'Unexpected success'}catch{if(-not $_.Exception.Response){throw};Assert-That ([int]$_.Exception.Response.StatusCode -eq $expected) ('HTTP '+$expected)}}
     Assert-That ((Snapshot).state -eq 'idle') 'initial idle without a window'
     Check-Rejection @{} 401
@@ -53,7 +65,7 @@ try {
     $cx=Tool-Fixture 'codex'
     $watch=[Diagnostics.Stopwatch]::StartNew()
     Send-Hook 'claude-code' 'PreToolUse' $p
-    Assert-That ((Snapshot).state -eq 'working') 'Claude working'
+    Await-Snapshot {param($p) $p.state -eq 'working'} 'Claude working' | Out-Null
     Assert-That ($watch.ElapsedMilliseconds -lt 1000) 'CLI-to-core under 1 second'
     $latency=$watch.ElapsedMilliseconds
     Send-Hook 'codex' 'PreToolUse' $cx
