@@ -64,4 +64,3 @@ The character is currently too large. Uniformly REDUCE THE WHOLE CHARACTER TO 80
 Replace every empty-background area with one absolutely UNIFORM digital RGB(0,255,0), #00FF00. No grain, no mottling, no gradients, no shadows, no green spill. This is a flat digital chroma color fill, not a physical green backdrop.
 Keep a single front-facing closed-mouth-smiling character, no props, text, additional views or borders.
 ```
-
