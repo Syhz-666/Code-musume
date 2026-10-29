@@ -38,7 +38,9 @@ fn clips() -> BTreeMap<String, Clip> {
         (
             s.into(),
             Clip {
+                image: None,
                 row,
+                column: 0,
                 frames,
                 fps: if s == "idle" { 6.0 } else { 10.0 },
                 looping: !matches!(s, "touch" | "done" | "notification"),
@@ -48,29 +50,9 @@ fn clips() -> BTreeMap<String, Clip> {
     .collect()
 }
 pub fn builtin() -> CharacterManifest {
-    CharacterManifest {
-        schema_version: 1,
-        id: "builtin".into(),
-        name: "代码娘 · 团子".into(),
-        default_form: "default".into(),
-        agent_forms: BTreeMap::from([
-            ("claude-code".into(), "claude".into()),
-            ("codex".into(), "codex".into()),
-        ]),
-        forms: ["default", "claude", "codex"]
-            .into_iter()
-            .map(|id| CharacterForm {
-                id: id.into(),
-                image: String::new(),
-                cell_width: 192,
-                cell_height: 208,
-                columns: 8,
-                clips: clips(),
-                look_rows: false,
-            })
-            .collect(),
-        license: Some("MIT (procedural sample artwork)".into()),
-    }
+    // Share the manifest with the browser preview; embed artwork in the desktop binary.
+    serde_json::from_str(include_str!("../../assets/builtin/musume.json"))
+        .expect("bundled character manifest must be valid")
 }
 fn image_bytes(path: &Path) -> Result<Vec<u8>, String> {
     if fs::metadata(path).map_err(|_| "图片不存在")?.len() > 20 * 1024 * 1024 {
@@ -117,49 +99,69 @@ fn validate(m: &CharacterManifest, dir: &Path) -> Result<(), String> {
         {
             return Err("形态布局无效".into());
         }
-        if Path::new(&f.image).components().count() != 1
-            || !matches!(
-                Path::new(&f.image).extension().and_then(|s| s.to_str()),
-                Some("png" | "webp")
-            )
-        {
-            return Err("图片必须是包内 PNG / WebP 文件".into());
-        }
-        let path = dir
-            .join(&f.image)
-            .canonicalize()
-            .map_err(|_| "角色图片不存在")?;
-        let canonical = dir.canonicalize().map_err(|e| e.to_string())?;
-        if !path.starts_with(&canonical) {
-            return Err("角色图片路径越界".into());
-        }
-        let bytes = image_bytes(&path)?;
-        let format = image::guess_format(&bytes).map_err(|_| "图片格式无效")?;
-        let expected = if f.image.ends_with(".png") {
-            image::ImageFormat::Png
-        } else {
-            image::ImageFormat::WebP
-        };
-        if format != expected {
-            return Err("图片扩展名与内容不一致".into());
-        }
-        let img = decode(&bytes)?;
-        let (w, h) = img.dimensions();
-        if w != f.cell_width * f.columns
-            || h % f.cell_height != 0
-            || f.clips.is_empty()
-            || !f.clips.contains_key("idle")
-        {
+        if f.clips.is_empty() || !f.clips.contains_key("idle") {
             return Err("图集尺寸或动作无效".into());
         }
-        for c in f.clips.values() {
-            if c.row >= h / f.cell_height
-                || c.frames == 0
-                || c.frames > f.columns
-                || !c.fps.is_finite()
-                || !(1.0..=60.0).contains(&c.fps)
+        if asset_names(f).len() > 16 {
+            return Err("图集页数超限".into());
+        }
+        let mut decoded_pixels = 0_u64;
+        for name in asset_names(f) {
+            if Path::new(name).components().count() != 1
+                || !matches!(
+                    Path::new(name).extension().and_then(|s| s.to_str()),
+                    Some("png" | "webp")
+                )
             {
-                return Err("动画行、帧数或帧率无效".into());
+                return Err("图片必须是包内 PNG / WebP 文件".into());
+            }
+            let path = dir
+                .join(name)
+                .canonicalize()
+                .map_err(|_| "角色图片不存在")?;
+            let canonical = dir.canonicalize().map_err(|e| e.to_string())?;
+            if !path.starts_with(&canonical) {
+                return Err("角色图片路径越界".into());
+            }
+            let bytes = image_bytes(&path)?;
+            let format = image::guess_format(&bytes).map_err(|_| "图片格式无效")?;
+            let expected = if name.ends_with(".png") {
+                image::ImageFormat::Png
+            } else {
+                image::ImageFormat::WebP
+            };
+            if format != expected {
+                return Err("图片扩展名与内容不一致".into());
+            }
+            let img = decode(&bytes)?;
+            let (w, h) = img.dimensions();
+            decoded_pixels += u64::from(w) * u64::from(h);
+            if decoded_pixels > 32 * 1024 * 1024 {
+                return Err("图集总解码尺寸超限".into());
+            }
+            if w != f.cell_width * f.columns || h % f.cell_height != 0 {
+                return Err("图集尺寸或动作无效".into());
+            }
+            for c in f
+                .clips
+                .values()
+                .filter(|clip| clip.image.as_deref().unwrap_or(&f.image) == name)
+            {
+                let end = c
+                    .row
+                    .checked_mul(f.columns)
+                    .and_then(|start| start.checked_add(c.column))
+                    .and_then(|start| start.checked_add(c.frames));
+                if c.row >= h / f.cell_height
+                    || c.column >= f.columns
+                    || c.frames == 0
+                    || c.frames > 1024
+                    || end.is_none_or(|end| end > (h / f.cell_height) * f.columns)
+                    || !c.fps.is_finite()
+                    || !(1.0..=60.0).contains(&c.fps)
+                {
+                    return Err("动画行、帧数或帧率无效".into());
+                }
             }
         }
     }
@@ -203,14 +205,33 @@ pub fn list() -> Vec<CharacterManifest> {
     }
     out
 }
+fn asset_names(form: &CharacterForm) -> std::collections::BTreeSet<&str> {
+    std::iter::once(form.image.as_str())
+        .chain(form.clips.values().filter_map(|clip| clip.image.as_deref()))
+        .collect()
+}
+#[cfg(test)]
 pub fn asset(id: &str, form: &str) -> Result<String, String> {
+    asset_page(id, form, None)
+}
+pub fn asset_page(id: &str, form: &str, image: Option<&str>) -> Result<String, String> {
     let m = load(id)?;
     let f = m.forms.iter().find(|f| f.id == form).ok_or("找不到形态")?;
-    if id == "builtin" {
-        return Ok(String::new());
+    let name = image.unwrap_or(&f.image);
+    if !asset_names(f).contains(name) {
+        return Err("找不到角色图集".into());
     }
-    let b = image_bytes(&root().join(id).join(&f.image))?;
-    let mime = if f.image.ends_with(".png") {
+    if id == "builtin" {
+        let bytes: &[u8] = match name {
+            "spritesheet.png" => include_bytes!("../../assets/builtin/spritesheet.png"),
+            "thinking.png" => include_bytes!("../../assets/builtin/thinking.png"),
+            "working.png" => include_bytes!("../../assets/builtin/working.png"),
+            _ => return Err("找不到角色图集".into()),
+        };
+        return Ok(format!("data:image/png;base64,{}", STANDARD.encode(bytes)));
+    }
+    let b = image_bytes(&root().join(id).join(name))?;
+    let mime = if name.ends_with(".png") {
         "image/png"
     } else {
         "image/webp"
@@ -233,8 +254,13 @@ pub fn import(source: &Path) -> Result<CharacterManifest, String> {
         m.id = format!("import-{}", uuid::Uuid::new_v4().simple());
         let target = root().join(&m.id);
         fs::create_dir_all(&target).map_err(|e| e.to_string())?;
-        for f in &m.forms {
-            fs::copy(dir.join(&f.image), target.join(&f.image)).map_err(|e| e.to_string())?;
+        for name in m
+            .forms
+            .iter()
+            .flat_map(asset_names)
+            .collect::<std::collections::BTreeSet<_>>()
+        {
+            fs::copy(dir.join(name), target.join(name)).map_err(|e| e.to_string())?;
         }
         copy_metadata(&dir, &target)?;
         atomic_write(&target.join("musume.original.json"), &b)?;
@@ -370,6 +396,133 @@ fn copy_metadata(dir: &Path, target: &Path) -> Result<Option<String>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn builtin_pages_have_aligned_states_and_shared_transition_endpoints() {
+        let manifest = builtin();
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../assets/builtin");
+        validate(&manifest, &dir).unwrap();
+        let bytes = include_bytes!("../../assets/builtin/spritesheet.png");
+        let image = decode(bytes).unwrap().to_rgba8();
+        assert_eq!(image.dimensions(), (3072, 3328));
+        let thinking_bytes = include_bytes!("../../assets/builtin/thinking.png");
+        let thinking = decode(thinking_bytes).unwrap().to_rgba8();
+        assert_eq!(thinking.dimensions(), (3072, 2912));
+        let working_bytes = include_bytes!("../../assets/builtin/working.png");
+        let working = decode(working_bytes).unwrap().to_rgba8();
+        assert_eq!(working.dimensions(), (3072, 2080));
+        let states = [
+            "idle",
+            "thinking",
+            "working",
+            "waiting-permission",
+            "notification",
+            "done",
+            "error",
+            "sleeping",
+        ];
+        for form in &manifest.forms {
+            assert_eq!(form.clips.len(), states.len() + 4);
+            for (index, state) in states.iter().enumerate() {
+                let clip = &form.clips[*state];
+                if *state == "thinking" {
+                    assert_eq!(clip.image.as_deref(), Some("thinking.png"));
+                    assert_eq!(clip.frames, 120);
+                    assert_eq!(clip.row * form.columns + clip.column, 60);
+                    continue;
+                }
+                if *state == "working" {
+                    assert_eq!(clip.image.as_deref(), Some("working.png"));
+                    assert_eq!(clip.frames, 88);
+                    assert_eq!(clip.row * form.columns + clip.column, 36);
+                    continue;
+                }
+                let slot = if index == 0 { 0 } else { 242 + index as u32 };
+                assert_eq!(clip.row * form.columns + clip.column, slot);
+                assert_eq!(clip.frames, if index == 0 { 243 } else { 1 });
+            }
+            assert_eq!(form.clips["idle"].fps, 24.0);
+            assert!(form.clips["idle"].looping);
+            assert_eq!(form.clips["thinking-enter"].frames, 60);
+            assert_eq!(form.clips["thinking-exit"].frames, 30);
+            assert_eq!(form.clips["working-enter"].frames, 36);
+            assert_eq!(form.clips["working-exit"].frames, 30);
+            assert_eq!(
+                asset_page("builtin", &form.id, Some("working.png")).unwrap(),
+                format!("data:image/png;base64,{}", STANDARD.encode(working_bytes))
+            );
+            assert_eq!(
+                asset_page("builtin", &form.id, Some("thinking.png")).unwrap(),
+                format!("data:image/png;base64,{}", STANDARD.encode(thinking_bytes))
+            );
+            assert_eq!(
+                asset("builtin", &form.id).unwrap(),
+                format!("data:image/png;base64,{}", STANDARD.encode(bytes))
+            );
+        }
+        for (page, count) in [(&image, 250), (&thinking, 210), (&working, 154)] {
+            for slot in 0..count {
+                let mut last_solid_y = None;
+                for y in 0..208 {
+                    for x in 0..192 {
+                        let [r, g, b, a] =
+                            page.get_pixel(slot % 16 * 192 + x, slot / 16 * 208 + y).0;
+                        if a >= 128 {
+                            last_solid_y = Some(y);
+                        }
+                        if x == 0 || x == 191 || y == 0 || y == 207 {
+                            assert_eq!(a, 0, "frame must have transparent borders");
+                        }
+                        assert!(
+                            !(a > 32 && g > 140 && i16::from(g) - i16::from(r.max(b)) > 45),
+                            "green-screen residue in slot {slot}"
+                        );
+                    }
+                }
+                assert!(
+                    matches!(last_solid_y, Some(198..=201)),
+                    "slot {slot}: {last_solid_y:?}"
+                );
+            }
+        }
+        let cell = |page: &image::RgbaImage, slot: u32| {
+            image::imageops::crop_imm(page, slot % 16 * 192, slot / 16 * 208, 192, 208).to_image()
+        };
+        assert_eq!(cell(&image, 0), cell(&image, 242));
+        assert_eq!(cell(&image, 0), cell(&thinking, 0));
+        assert_eq!(cell(&image, 0), cell(&thinking, 209));
+        assert_eq!(cell(&thinking, 60), cell(&thinking, 179));
+        assert_eq!(cell(&image, 0), cell(&working, 0));
+        assert_eq!(cell(&image, 0), cell(&working, 153));
+        assert_eq!(cell(&working, 36), cell(&working, 123));
+        assert!(asset("builtin", "missing-form").is_err());
+        assert!(asset_page("builtin", "default", Some("../thinking.png")).is_err());
+        assert!(asset_page("builtin", "default", Some("missing.png")).is_err());
+    }
+
+    #[test]
+    fn legacy_clips_default_to_column_zero_and_wrapped_ranges_are_checked() {
+        let clip: Clip =
+            serde_json::from_str(r#"{"row":7,"frames":6,"fps":10,"looping":true}"#).unwrap();
+        assert_eq!(clip.column, 0);
+        assert!(clip.image.is_none());
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../assets/builtin");
+        for (column, frames) in [(16, 1), (0, 257), (0, 1025)] {
+            let mut manifest = builtin();
+            let idle = manifest.forms[0].clips.get_mut("idle").unwrap();
+            idle.column = column;
+            idle.frames = frames;
+            assert!(validate(&manifest, &dir).is_err());
+        }
+        for name in ["../thinking.png", "missing.png"] {
+            let mut manifest = builtin();
+            manifest.forms[0].clips.get_mut("thinking").unwrap().image = Some(name.into());
+            assert!(validate(&manifest, &dir).is_err());
+        }
+        let mut manifest = builtin();
+        manifest.forms[0].clips.get_mut("thinking").unwrap().frames = 300;
+        assert!(validate(&manifest, &dir).is_err());
+    }
+
     fn sheet(rows: u32) -> image::DynamicImage {
         let mut pixels = image::RgbaImage::new(1536, rows * 208);
         for row in 0..rows {

@@ -202,6 +202,7 @@ pub struct Config {
     pub ghost: bool,
     pub user_hidden: bool,
     pub reduced_motion: bool,
+    pub manual_animation_enabled: bool,
     pub fullscreen_hide: bool,
     pub autostart: bool,
     pub renderer: String,
@@ -217,12 +218,24 @@ impl Default for Config {
             ghost: false,
             user_hidden: false,
             reduced_motion: false,
+            manual_animation_enabled: false,
             fullscreen_hide: true,
             autostart: false,
             renderer: "pixi".into(),
             position: None,
         }
     }
+}
+
+/// Display-only override; the selected state is never persisted in Config.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "bindings", derive(ts_rs::TS))]
+pub struct AnimationPreview {
+    pub enabled: bool,
+    pub state: Option<DisplayState>,
+    #[cfg_attr(feature = "bindings", ts(type = "number"))]
+    pub revision: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -263,7 +276,12 @@ pub struct RuntimeFile {
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "bindings", derive(ts_rs::TS))]
 pub struct Clip {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "bindings", ts(optional))]
+    pub image: Option<String>,
     pub row: u32,
+    #[serde(default)]
+    pub column: u32,
     pub frames: u32,
     pub fps: f32,
     pub looping: bool,

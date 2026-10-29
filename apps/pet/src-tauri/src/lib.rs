@@ -1,3 +1,4 @@
+mod animation_preview;
 mod characters;
 mod platform;
 mod render_receipts;
@@ -12,6 +13,8 @@ use tauri::{
     tray::TrayIconBuilder,
     AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
 };
+
+struct DesktopMenu(Menu<tauri::Wry>);
 
 fn mode() -> &'static str {
     if cfg!(debug_assertions) {
@@ -159,6 +162,24 @@ async fn set_config(config: Config, s: State<'_, Arc<Native>>) -> Result<Config,
     s.configure(config).await
 }
 #[tauri::command]
+fn get_animation_preview(s: State<'_, Arc<Native>>) -> AnimationPreview {
+    s.animation_preview.lock().unwrap().snapshot()
+}
+#[tauri::command]
+async fn set_animation_preview_enabled(
+    enabled: bool,
+    s: State<'_, Arc<Native>>,
+) -> Result<AnimationPreview, String> {
+    s.set_preview_enabled(enabled).await
+}
+#[tauri::command]
+async fn set_animation_preview_state(
+    state: Option<DisplayState>,
+    s: State<'_, Arc<Native>>,
+) -> Result<AnimationPreview, String> {
+    s.set_preview_state(state).await
+}
+#[tauri::command]
 async fn get_diagnostics(s: State<'_, Arc<Native>>) -> Result<Vec<Diagnostic>, String> {
     s.diagnostics().await
 }
@@ -177,6 +198,22 @@ async fn show_settings(app: AppHandle) -> Result<(), String> {
     open_settings(&app)
 }
 #[tauri::command]
+async fn show_pet_menu(
+    window: WebviewWindow,
+    menu: State<'_, DesktopMenu>,
+    x: f64,
+    y: f64,
+) -> Result<(), String> {
+    if window.label() != "pet" || !x.is_finite() || !y.is_finite() {
+        return Err("无效的桌宠菜单位置".into());
+    }
+    // CSS client coordinates are logical pixels; Windows places the native menu
+    // within the monitor work area even when the pet is against a screen edge.
+    window
+        .popup_menu_at(&menu.0, tauri::LogicalPosition::new(x, y))
+        .map_err(|e| e.to_string())
+}
+#[tauri::command]
 fn quit_app(app: AppHandle) {
     app.exit(0);
 }
@@ -193,10 +230,16 @@ async fn get_character(id: String) -> Result<CharacterManifest, String> {
         .map_err(|e| e.to_string())?
 }
 #[tauri::command]
-async fn get_character_asset(id: String, form: String) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || characters::asset(&id, &form))
-        .await
-        .map_err(|e| e.to_string())?
+async fn get_character_asset(
+    id: String,
+    form: String,
+    image: Option<String>,
+) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        characters::asset_page(&id, &form, image.as_deref())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 #[tauri::command]
 async fn import_character(source: String) -> Result<CharacterManifest, String> {
@@ -240,7 +283,9 @@ fn report_rendered(
     instance_id: String,
     revision: u64,
 ) -> bool {
+    let preview = s.animation_preview.lock().unwrap();
     window.label() == "pet"
+        && !preview.active()
         && s.render_receipts.lock().unwrap().acknowledge(
             &s.runtime.instance_id,
             &instance_id,
@@ -319,37 +364,47 @@ fn tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
             &MenuItem::with_id(app, "exit", "退出", true, None::<&str>)?,
         ],
     )?;
-    let mut builder = TrayIconBuilder::new()
+    let icon = image::load_from_memory_with_format(
+        include_bytes!("../icons/tray-icon.png"),
+        image::ImageFormat::Png,
+    )?
+    .into_rgba8();
+    let (width, height) = icon.dimensions();
+    let builder = TrayIconBuilder::new()
+        .icon(tauri::image::Image::new_owned(
+            icon.into_raw(),
+            width,
+            height,
+        ))
+        .icon_as_template(false)
         .menu(&menu)
         .tooltip("代码娘")
         .show_menu_on_left_click(true);
-    if let Some(icon) = app.default_window_icon() {
-        builder = builder.icon(icon.clone());
-    }
-    builder
-        .on_menu_event(|app, event| match event.id.as_ref() {
-            "settings" => {
-                let app = app.clone();
-                tauri::async_runtime::spawn_blocking(move || {
-                    let _ = open_settings(&app);
-                });
+    app.manage(DesktopMenu(menu.clone()));
+    // Both the pet context menu and the tray use the same entries and handler.
+    app.on_menu_event(|app, event| match event.id.as_ref() {
+        "settings" => {
+            let app = app.clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                let _ = open_settings(&app);
+            });
+        }
+        "exit" => app.exit(0),
+        id => {
+            let native = app.state::<Arc<Native>>().inner().clone();
+            let mut c = native.config.lock().unwrap().clone();
+            match id {
+                "show" => c.user_hidden = false,
+                "hide" => c.user_hidden = true,
+                "ghost" => c.ghost = !c.ghost,
+                _ => return,
             }
-            "exit" => app.exit(0),
-            id => {
-                let native = app.state::<Arc<Native>>().inner().clone();
-                let mut c = native.config.lock().unwrap().clone();
-                match id {
-                    "show" => c.user_hidden = false,
-                    "hide" => c.user_hidden = true,
-                    "ghost" => c.ghost = !c.ghost,
-                    _ => return,
-                }
-                tauri::async_runtime::spawn(async move {
-                    let _ = native.configure(c).await;
-                });
-            }
-        })
-        .build(app)?;
+            tauri::async_runtime::spawn(async move {
+                let _ = native.configure(c).await;
+            });
+        }
+    });
+    builder.build(app)?;
     Ok(())
 }
 pub fn run() {
@@ -426,12 +481,16 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             pet_ready,
             show_settings,
+            show_pet_menu,
             quit_app,
             subscribe_projection,
             unsubscribe_projection,
             get_projection,
             get_config,
             set_config,
+            get_animation_preview,
+            set_animation_preview_enabled,
+            set_animation_preview_state,
             get_diagnostics,
             reset_sessions,
             list_characters,

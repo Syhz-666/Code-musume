@@ -44,36 +44,6 @@
   color: #746786;
   pointer-events: none;
 }
-.settings-button,
-.exit-button {
-  position: absolute;
-  bottom: 0;
-  border: 0;
-  border-radius: 8px;
-  padding: 2px 5px;
-  background: #ffffffcf;
-  color: #756986;
-  cursor: pointer;
-  font-size: 12px;
-}
-.settings-button {
-  right: 4px;
-}
-.exit-button {
-  left: 4px;
-  min-height: 24px;
-}
-.settings-button:hover,
-.exit-button:hover {
-  background: #fff;
-}
-.exit-button:hover {
-  color: #9b4545;
-}
-.exit-button:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
 .dom-pet {
   position: absolute;
   left: 32px;
@@ -138,6 +108,13 @@
   left: 8px;
   top: 7px;
   background-repeat: no-repeat;
+}
+.sprite-transition {
+  display: none;
+  position: absolute;
+  left: 8px;
+  z-index: 1;
+  pointer-events: none;
 }
 @media (prefers-reduced-motion: reduce) {
   .bubble {

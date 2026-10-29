@@ -24,6 +24,7 @@ fn main() {
         Projection,
         Position,
         Config,
+        AnimationPreview,
         Diagnostic,
         RenderReceipt,
         Clip,

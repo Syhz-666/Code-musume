@@ -1,15 +1,19 @@
 import {
   type Agent,
+  type AnimationPreview,
+  AnimationPreviewStore,
   type CharacterManifest,
   type Config,
   type Diagnostic,
+  type DisplayState,
   type HookStatus,
   type InstallPreview,
   STATE_LABELS,
 } from "@code-musume/protocol";
-import { StrictMode, useEffect, useState } from "react";
+import { StrictMode, useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { invoke, isTauri, preview, watchProjection } from "./bridge";
+import { invoke, isTauri, preview, watchAnimationPreview, watchProjection } from "./bridge";
+import { builtinManifest } from "./builtin-character";
 import "./settings.css";
 
 const defaults: Config = {
@@ -20,6 +24,7 @@ const defaults: Config = {
   ghost: false,
   userHidden: false,
   reducedMotion: false,
+  manualAnimationEnabled: false,
   fullscreenHide: true,
   autostart: false,
   renderer: "pixi",
@@ -32,7 +37,7 @@ function Settings() {
   const [tab, setTab] = useState("connect"),
     [scope, setScope] = useState("project"),
     [cwd, setCwd] = useState("");
-  const [characters, setCharacters] = useState<CharacterManifest[]>([]),
+  const [characters, setCharacters] = useState<CharacterManifest[]>([builtinManifest]),
     [statuses, setStatuses] = useState<HookStatus[]>([]),
     [diagnostics, setDiagnostics] = useState<Diagnostic[]>([]);
   const [message, setMessage] = useState(""),
@@ -40,13 +45,29 @@ function Settings() {
     [busy, setBusy] = useState(false),
     [pending, setPending] = useState<InstallPreview | null>(null);
   const [source, setSource] = useState("");
+  const [animationPreview, setAnimationPreview] = useState<AnimationPreview | null>(null);
+  const previewStore = useRef(new AnimationPreviewStore());
+  const acceptAnimationPreview = useCallback((next: AnimationPreview) => {
+    if (!previewStore.current.accept(next)) return;
+    setAnimationPreview(next);
+    setConfig((previous) => ({ ...previous, manualAnimationEnabled: next.enabled }));
+  }, []);
   useEffect(() => {
     let cancel = false,
-      stop: (() => void) | undefined;
+      stop: (() => void) | undefined,
+      stopAnimationPreview: (() => void) | undefined;
     void watchProjection(setP)
       .then((f) => {
         if (cancel) f();
         else stop = f;
+      })
+      .catch((e: unknown) => setError(String(e)));
+    void watchAnimationPreview((next) => {
+      if (!cancel) acceptAnimationPreview(next);
+    })
+      .then((f) => {
+        if (cancel) f();
+        else stopAnimationPreview = f;
       })
       .catch((e: unknown) => setError(String(e)));
     if (isTauri())
@@ -56,7 +77,11 @@ function Settings() {
       ])
         .then(([c, chars]) => {
           if (!cancel) {
-            setConfig(c);
+            setConfig({
+              ...c,
+              manualAnimationEnabled:
+                previewStore.current.current?.enabled ?? c.manualAnimationEnabled,
+            });
             setCharacters(chars);
           }
         })
@@ -64,8 +89,9 @@ function Settings() {
     return () => {
       cancel = true;
       stop?.();
+      stopAnimationPreview?.();
     };
-  }, []);
+  }, [acceptAnimationPreview]);
   useEffect(() => {
     setPending(null);
     if (isTauri() && (scope === "user" || cwd))
@@ -78,6 +104,12 @@ function Settings() {
         .catch((e: unknown) => setError(String(e)));
   }, [scope, cwd]);
   const character = characters.find((m) => m.id === config.characterId);
+  const activeCharacter = characters.find((m) => m.id === p.characterId);
+  const activeForm =
+    activeCharacter?.forms.find((f) => f.id === p.formId) ??
+    activeCharacter?.forms.find((f) => f.id === activeCharacter.defaultForm);
+  const previewState = animationPreview?.enabled ? animationPreview.state : null;
+  const missingPreviewClip = previewState && activeForm && !activeForm.clips[previewState];
   async function task(action: () => Promise<void>) {
     setBusy(true);
     setError("");
@@ -356,7 +388,7 @@ function Settings() {
                     </option>
                   ))
                 ) : (
-                  <option value="builtin">代码娘 · 团子</option>
+                  <option value="builtin">{builtinManifest.name}</option>
                 )}
               </select>
             </label>
@@ -401,6 +433,101 @@ function Settings() {
               保存角色选择
             </button>
             {character?.license && <p className="hint">{character.license}</p>}
+          </section>
+          <section className="panel" data-testid="animation-preview-panel">
+            <h3>手动状态预览</h3>
+            <label className="toggle-row">
+              <span>
+                <strong>开启手动状态预览</strong>
+                <small>选择角色的显示状态，真实工作信息仍会持续更新。</small>
+              </span>
+              <input
+                type="checkbox"
+                data-testid="animation-preview-enabled"
+                checked={animationPreview?.enabled ?? false}
+                disabled={busy || !isTauri() || !animationPreview}
+                onChange={(e) => {
+                  const enabled = e.target.checked;
+                  void task(async () => {
+                    acceptAnimationPreview(
+                      await invoke<AnimationPreview>("set_animation_preview_enabled", { enabled }),
+                    );
+                  });
+                }}
+              />
+            </label>
+            {animationPreview?.enabled && (
+              <div className="animation-preview-controls">
+                <label>
+                  预览状态
+                  <select
+                    aria-label="预览动画状态"
+                    data-testid="animation-preview-state"
+                    value={previewState ?? ""}
+                    disabled={busy || !isTauri()}
+                    onChange={(e) => {
+                      const state = e.target.value as DisplayState;
+                      void task(async () => {
+                        acceptAnimationPreview(
+                          await invoke<AnimationPreview>("set_animation_preview_state", { state }),
+                        );
+                      });
+                    }}
+                  >
+                    <option value="" disabled>
+                      选择预览状态
+                    </option>
+                    {(
+                      [
+                        "idle",
+                        "thinking",
+                        "working",
+                        "waiting-permission",
+                        "notification",
+                        "done",
+                        "error",
+                        "sleeping",
+                      ] as const
+                    ).map((state) => (
+                      <option key={state} value={state}>
+                        {STATE_LABELS[state]}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <p data-testid="animation-preview-mode">
+                  当前显示：
+                  {previewState
+                    ? `手动预览 · ${STATE_LABELS[previewState]}`
+                    : `真实状态 · ${STATE_LABELS[p.state]}`}
+                </p>
+                <p data-testid="animation-preview-real-state">
+                  实时工作状态：{STATE_LABELS[p.state]}
+                </p>
+                {missingPreviewClip && (
+                  <p className="notice" data-testid="animation-preview-missing">
+                    缺少对应素材，当前显示待机。
+                  </p>
+                )}
+                <button
+                  type="button"
+                  data-testid="animation-preview-return"
+                  disabled={busy || !isTauri() || !previewState}
+                  onClick={() =>
+                    void task(async () => {
+                      acceptAnimationPreview(
+                        await invoke<AnimationPreview>("set_animation_preview_state", {
+                          state: null,
+                        }),
+                      );
+                    })
+                  }
+                >
+                  返回真实状态
+                </button>
+                <p className="hint">关闭设置窗口后仍保留手动预览；重启代码娘后自动回到真实状态。</p>
+              </div>
+            )}
           </section>
           <section className="panel">
             <h3>导入角色</h3>

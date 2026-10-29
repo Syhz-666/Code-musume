@@ -20,7 +20,7 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use subtle::ConstantTimeEq;
-use tauri::{ipc::Channel, AppHandle, Manager};
+use tauri::{ipc::Channel, AppHandle, Emitter, Manager};
 use tokio::sync::{mpsc, oneshot};
 
 enum Message {
@@ -36,6 +36,11 @@ enum Message {
     Diagnostics(oneshot::Sender<Vec<Diagnostic>>),
     Reset,
     Position(Position),
+    PreviewEnabled(bool, oneshot::Sender<Result<AnimationPreview, String>>),
+    PreviewState(
+        Option<DisplayState>,
+        oneshot::Sender<Result<AnimationPreview, String>>,
+    ),
     #[cfg(feature = "e2e")]
     AdvanceClock(u64, oneshot::Sender<Projection>),
 }
@@ -67,6 +72,7 @@ pub struct Native {
     rate: Mutex<(Instant, f64)>,
     pub render_fps: Mutex<Option<(Instant, f64)>>,
     pub render_receipts: Mutex<super::render_receipts::RenderReceipts>,
+    pub animation_preview: Mutex<super::animation_preview::PreviewController>,
     clock: Clock,
 }
 impl Native {
@@ -130,6 +136,9 @@ impl Native {
                 offset: AtomicU64::new(0),
             },
             render_receipts: Mutex::new(super::render_receipts::RenderReceipts::default()),
+            animation_preview: Mutex::new(super::animation_preview::PreviewController::new(
+                config.manual_animation_enabled,
+            )),
             tx,
             bytes: AtomicUsize::new(0),
             lost: AtomicU64::new(0),
@@ -166,6 +175,29 @@ impl Native {
                         Some(Message::Diagnostics(reply))=>{let _=reply.send(engine.diagnostics());},
                         Some(Message::Reset)=>engine.reset(now),
                         Some(Message::Position(p))=>{engine.config.position=Some(p);*state.config.lock().unwrap()=engine.config.clone();position_dirty=true;last_position=Instant::now();},
+                        Some(Message::PreviewEnabled(enabled, reply))=>{
+                            let result=(||{
+                                if engine.config.manual_animation_enabled != enabled {
+                                    let mut next=engine.config.clone();
+                                    next.manual_animation_enabled=enabled;
+                                    atomic_write(&config_dir().join("config.json"),&serde_json::to_vec_pretty(&next).unwrap())?;
+                                    engine.config=next.clone();
+                                    *state.config.lock().unwrap()=next;
+                                }
+                                let (changed,snapshot)={let mut preview=state.animation_preview.lock().unwrap();let changed=preview.set_enabled(enabled);(changed,preview.snapshot())};
+                                if changed {if let Some(app)=&app {let _=app.emit("animation-preview-changed",&snapshot);}}
+                                Ok(snapshot)
+                            })();
+                            let _=reply.send(result);
+                        },
+                        Some(Message::PreviewState(selected, reply))=>{
+                            let result=(||{
+                                let (changed,snapshot)={let mut preview=state.animation_preview.lock().unwrap();let changed=preview.select(selected)?;(changed,preview.snapshot())};
+                                if changed {if let Some(app)=&app {let _=app.emit("animation-preview-changed",&snapshot);}}
+                                Ok(snapshot)
+                            })();
+                            let _=reply.send(result);
+                        },
                         Some(Message::Config(mut c,character,reply))=>{
                             c.position=engine.config.position.clone();
                             let result=(||{
@@ -174,7 +206,7 @@ impl Native {
                                     if c.autostart!=engine.config.autostart{let _=super::platform::autostart(engine.config.autostart);}return Err(e);
                                 }Ok(c)
                             })();
-                            if let Ok(c)=&result{engine.config=c.clone();engine.character_forms=character.agent_forms;engine.default_form=character.default_form;*state.config.lock().unwrap()=c.clone();engine.tick(now);if let Some(app)=&app{fullscreen=c.fullscreen_hide&&super::platform::fullscreen(app);super::apply_visibility(app,&state,fullscreen);}}
+                            if let Ok(c)=&result{engine.config=c.clone();engine.character_forms=character.agent_forms;engine.default_form=character.default_form;*state.config.lock().unwrap()=c.clone();let (changed,snapshot)={let mut preview=state.animation_preview.lock().unwrap();let changed=preview.set_enabled(c.manual_animation_enabled);(changed,preview.snapshot())};if changed{if let Some(app)=&app{let _=app.emit("animation-preview-changed",&snapshot);}}engine.tick(now);if let Some(app)=&app{fullscreen=c.fullscreen_hide&&super::platform::fullscreen(app);super::apply_visibility(app,&state,fullscreen);}}
                             let _=reply.send(result);
                         },
                         None=>break,
@@ -286,6 +318,25 @@ impl Native {
             .await
             .map_err(|_| "核心已停止")?;
         rx.await.map_err(|_| "核心已停止".into())
+    }
+    pub async fn set_preview_enabled(&self, enabled: bool) -> Result<AnimationPreview, String> {
+        let (tx, rx) = oneshot::channel();
+        self.tx
+            .send(Message::PreviewEnabled(enabled, tx))
+            .await
+            .map_err(|_| "核心已停止")?;
+        rx.await.map_err(|_| "核心已停止".to_string())?
+    }
+    pub async fn set_preview_state(
+        &self,
+        selected: Option<DisplayState>,
+    ) -> Result<AnimationPreview, String> {
+        let (tx, rx) = oneshot::channel();
+        self.tx
+            .send(Message::PreviewState(selected, tx))
+            .await
+            .map_err(|_| "核心已停止")?;
+        rx.await.map_err(|_| "核心已停止".to_string())?
     }
     pub async fn reset(&self) {
         let _ = self.tx.send(Message::Reset).await;

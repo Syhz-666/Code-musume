@@ -1,4 +1,32 @@
-import { type DisplayState, PROTOCOL_VERSION, type Projection } from "./generated";
+import {
+  type AnimationPreview,
+  type DisplayState,
+  PROTOCOL_VERSION,
+  type Projection,
+} from "./generated";
+
+export const DEFAULT_ANIMATION_PREVIEW: AnimationPreview = {
+  enabled: false,
+  state: null,
+  revision: 0,
+};
+
+/** Event notifications and command replies may arrive in a different order. */
+export class AnimationPreviewStore {
+  current: AnimationPreview | null = null;
+
+  accept(next: AnimationPreview): boolean {
+    if (
+      !Number.isSafeInteger(next.revision) ||
+      next.revision < 0 ||
+      (!next.enabled && next.state !== null) ||
+      (this.current && next.revision <= this.current.revision)
+    )
+      return false;
+    this.current = next;
+    return true;
+  }
+}
 export const STATE_LABELS: Record<DisplayState, string> = {
   "waiting-permission": "等你处理",
   error: "这轮遇到问题",
