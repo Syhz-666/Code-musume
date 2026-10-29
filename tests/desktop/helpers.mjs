@@ -12,33 +12,72 @@ export const root = fileURLToPath(new URL("../..", import.meta.url));
 export const runDir = process.env.CODE_MUSUME_UI_RUN_DIR;
 export const visuals = [];
 const renderedLatencies = [];
+// WDIO 1.5.0 caches its async callback by window label. Use the standard sync
+// endpoint (which awaits promises) so commands also work after window recreation.
+export async function nativeInvoke(command, args = {}) {
+  return browser.execute(
+    async (name, values) => window.__TAURI_INTERNALS__.invoke(name, values),
+    command,
+    args,
+  );
+}
+function isNavigationTimeout(error) {
+  return /Script execution timed out/i.test(String(error));
+}
 export async function selectWindow(label, { prepare = true } = {}) {
   await browser.waitUntil(async () => (await browser.getWindowHandles()).includes(label));
   await browser.switchToWindow(label);
-  await browser.tauri.switchWindow(label);
   await browser.waitUntil(
-    async () =>
-      await browser.execute(
-        (label) =>
-          label === "pet"
-            ? !!document.querySelector("#app")?.dataset.instance
-            : !!document.querySelector('[data-testid="settings"]'),
-        label,
-      ),
+    async () => {
+      try {
+        return await browser.execute(
+          (label) =>
+            label === "pet"
+              ? !!document.querySelector("#app")?.dataset.instance
+              : !!document.querySelector('[data-testid="settings"]'),
+          label,
+        );
+      } catch (error) {
+        if (isNavigationTimeout(error)) return false;
+        throw error;
+      }
+    },
     { timeoutMsg: `Window ${label} is not initialized` },
   );
   if (!prepare) return;
-  await browser.tauri.execute(async ({ core }, label) => {
-    const isPet = label === "pet";
-    await core.invoke("plugin:window|set_size", {
-      label,
-      value: { Physical: { width: isPet ? 160 : 850, height: isPet ? 210 : 760 } },
-    });
-    const style = document.createElement("style");
-    style.textContent =
-      "*,*::before,*::after{transition:none!important;animation:none!important;caret-color:transparent!important}";
-    document.head.append(style);
-  }, label);
+  const isPet = label === "pet";
+  await browser.waitUntil(
+    async () => {
+      try {
+        await nativeInvoke("plugin:window|set_size", {
+          label,
+          value: { Physical: { width: isPet ? 160 : 850, height: isPet ? 210 : 760 } },
+        });
+        return true;
+      } catch (error) {
+        if (isNavigationTimeout(error)) return false;
+        throw error;
+      }
+    },
+    { timeoutMsg: `Window ${label} did not reach its physical test size` },
+  );
+  await browser.waitUntil(
+    async () => {
+      try {
+        return await browser.execute(() => {
+          const style = document.createElement("style");
+          style.textContent =
+            "*,*::before,*::after{transition:none!important;animation:none!important;caret-color:transparent!important}";
+          document.head.append(style);
+          return true;
+        });
+      } catch (error) {
+        if (isNavigationTimeout(error)) return false;
+        throw error;
+      }
+    },
+    { timeoutMsg: `Window ${label} did not finish navigation` },
+  );
 }
 export async function health() {
   const path = join(runDir, "runtime/runtime.dev.json");
@@ -93,7 +132,13 @@ export async function pet(expected, { latency = false, prepare = true } = {}) {
   await selectWindow("pet", { prepare });
   await browser.waitUntil(
     async () => {
-      const actual = await browser.execute(() => ({ ...document.querySelector("#app").dataset }));
+      let actual;
+      try {
+        actual = await browser.execute(() => ({ ...document.querySelector("#app")?.dataset }));
+      } catch (error) {
+        if (isNavigationTimeout(error)) return false;
+        throw error;
+      }
       return (
         Object.entries(expected).every(([k, v]) => actual[k] === String(v)) &&
         actual.revision === actual.renderedRevision
@@ -131,6 +176,21 @@ export async function tab(name) {
   }[name];
   await (await browser.$(`[data-testid="tab-${id}"]`)).waitForDisplayed();
   await (await browser.$(`[data-testid="tab-${id}"]`)).click();
+}
+export async function manualPet(state, realState, { prepare = true } = {}) {
+  await selectWindow("pet", { prepare });
+  await browser.waitUntil(
+    async () => {
+      const actual = await browser.execute(() => ({ ...document.querySelector("#app").dataset }));
+      return (
+        actual.animationMode === "manual" &&
+        actual.displayState === state &&
+        actual.state === realState
+      );
+    },
+    { timeoutMsg: `Pet did not preview ${state} while real state is ${realState}` },
+  );
+  assert.equal(await (await browser.$(".agent-label")).getText(), "手动预览");
 }
 export async function choose(selector, value) {
   await browser.execute(

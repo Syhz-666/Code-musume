@@ -5,27 +5,27 @@
       "sha256": "b2ed94a447c4c3bb1426d5dbaa24dd492d46152480093cc7d97e8cd6748055da",
       "reviewer": "Codex",
       "reviewMode": "user-delegated-agent",
-      "authorization": "2026-10-15 用户：帮我完成决策",
-      "reviewedAt": "2026-10-15T06:39:06.550Z",
-      "sourceRun": "ui-2026-10-15T06-37-30-972Z",
+      "authorization": "用户已明确委托 Codex 完成截图审阅决策；2026-10-29 要求移除桌宠按钮并改用右键菜单",
+      "reviewedAt": "2026-10-29T06:57:53.129Z",
+      "sourceRun": "ui-2026-10-29T06-54-28-222Z",
       "environment": {
         "dpr": 1,
         "height": 760,
-        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0",
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0",
         "width": 850
       }
     },
     "settings-character": {
-      "sha256": "c9885931ddabaa3d3de9eff025c59881168b57439c805ad1713edb05ec4eaca8",
+      "sha256": "f989c61a912bbc0fa673120115de512826c9fed954ef0cca599acf1779672dda",
       "reviewer": "Codex",
       "reviewMode": "user-delegated-agent",
-      "authorization": "2026-10-15 用户：帮我完成决策",
-      "reviewedAt": "2026-10-15T06:39:06.551Z",
-      "sourceRun": "ui-2026-10-15T06-37-30-972Z",
+      "authorization": "用户已明确委托 Codex 完成截图审阅决策；2026-10-29 要求移除桌宠按钮并改用右键菜单",
+      "reviewedAt": "2026-10-29T06:57:53.131Z",
+      "sourceRun": "ui-2026-10-29T06-54-28-222Z",
       "environment": {
         "dpr": 1,
         "height": 760,
-        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0",
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0",
         "width": 850
       }
     },
@@ -33,13 +33,13 @@
       "sha256": "45a9eeaa116b45361aeaf3dfe49039b5f0bc7e2b070d646b40c0645feab61c60",
       "reviewer": "Codex",
       "reviewMode": "user-delegated-agent",
-      "authorization": "2026-10-15 用户：帮我完成决策",
-      "reviewedAt": "2026-10-15T06:39:06.553Z",
-      "sourceRun": "ui-2026-10-15T06-37-30-972Z",
+      "authorization": "用户已明确委托 Codex 完成截图审阅决策；2026-10-29 要求移除桌宠按钮并改用右键菜单",
+      "reviewedAt": "2026-10-29T06:57:53.132Z",
+      "sourceRun": "ui-2026-10-29T06-54-28-222Z",
       "environment": {
         "dpr": 1,
         "height": 760,
-        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0",
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0",
         "width": 850
       }
     },
@@ -47,265 +47,265 @@
       "sha256": "fc439a2bd35dc8af2a209ddf2956d31178724c27bec703c72c6657cb356256b9",
       "reviewer": "Codex",
       "reviewMode": "user-delegated-agent",
-      "authorization": "2026-10-15 用户：帮我完成决策",
-      "reviewedAt": "2026-10-15T06:39:06.553Z",
-      "sourceRun": "ui-2026-10-15T06-37-30-972Z",
+      "authorization": "用户已明确委托 Codex 完成截图审阅决策；2026-10-29 要求移除桌宠按钮并改用右键菜单",
+      "reviewedAt": "2026-10-29T06:57:53.133Z",
+      "sourceRun": "ui-2026-10-29T06-54-28-222Z",
       "environment": {
         "dpr": 1,
         "height": 760,
-        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0",
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0",
         "width": 850
       }
     },
     "pixi-idle": {
-      "sha256": "02cfee1cbb0329197e34c706d6a90cbb0fe3c1b7150824b6ab0c105ff9585c00",
+      "sha256": "2203762ed1ce68a7b2ef6ca73b9e60f4ed18a52dc51060de4064291284b8ba82",
       "reviewer": "Codex",
       "reviewMode": "user-delegated-agent",
-      "authorization": "2026-10-15 用户：帮我完成决策",
-      "reviewedAt": "2026-10-15T06:39:06.554Z",
-      "sourceRun": "ui-2026-10-15T06-37-30-972Z",
+      "authorization": "用户已明确委托 Codex 完成截图审阅决策；2026-10-29 要求移除桌宠按钮并改用右键菜单",
+      "reviewedAt": "2026-10-29T06:57:53.133Z",
+      "sourceRun": "ui-2026-10-29T06-54-28-222Z",
       "environment": {
         "dpr": 1,
         "height": 210,
-        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0",
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0",
         "width": 160
       }
     },
     "pixi-thinking": {
-      "sha256": "11c7ae93639bbc7f3f8de33d17ddd77b0fd30baf096b9591a7602111cfcc839e",
+      "sha256": "edb0cb759ef12145c79eceed124e854f6096d017ca86b510aab10071fda7a4f4",
       "reviewer": "Codex",
       "reviewMode": "user-delegated-agent",
-      "authorization": "2026-10-15 用户：帮我完成决策",
-      "reviewedAt": "2026-10-15T06:39:06.554Z",
-      "sourceRun": "ui-2026-10-15T06-37-30-972Z",
+      "authorization": "用户已明确委托 Codex 完成截图审阅决策；2026-10-29 要求移除桌宠按钮并改用右键菜单",
+      "reviewedAt": "2026-10-29T06:57:53.134Z",
+      "sourceRun": "ui-2026-10-29T06-54-28-222Z",
       "environment": {
         "dpr": 1,
         "height": 210,
-        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0",
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0",
         "width": 160
       }
     },
     "pixi-working": {
-      "sha256": "11c7ae93639bbc7f3f8de33d17ddd77b0fd30baf096b9591a7602111cfcc839e",
+      "sha256": "9dd325bbd9b9a76ed89899c1324c3a91b5a5bce7f05f3611579d95dc3c5bcda9",
       "reviewer": "Codex",
       "reviewMode": "user-delegated-agent",
-      "authorization": "2026-10-15 用户：帮我完成决策",
-      "reviewedAt": "2026-10-15T06:39:06.554Z",
-      "sourceRun": "ui-2026-10-15T06-37-30-972Z",
+      "authorization": "用户要求矫正干活中腿部杂色；沿用已委托的截图审阅，已检查实际双渲染模式及工作进入、持续、退出截图",
+      "reviewedAt": "2026-10-29T13:05:18.736401Z",
+      "sourceRun": "ui-20261029-working-colors-review",
       "environment": {
         "dpr": 1,
         "height": 210,
-        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0",
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0",
         "width": 160
       }
     },
     "pixi-waiting": {
-      "sha256": "2e2d818ec119f8682cffe99410a54e095a0ffd7ec1c709469072ecae85ce5cc6",
+      "sha256": "8cc94b3d06d138305b968e07ba7f7e45cd1305609b3b69a1585fc3f4916b00a5",
       "reviewer": "Codex",
       "reviewMode": "user-delegated-agent",
-      "authorization": "2026-10-15 用户：帮我完成决策",
-      "reviewedAt": "2026-10-15T06:39:06.555Z",
-      "sourceRun": "ui-2026-10-15T06-37-30-972Z",
+      "authorization": "用户已明确委托 Codex 完成截图审阅决策；2026-10-29 要求移除桌宠按钮并改用右键菜单",
+      "reviewedAt": "2026-10-29T06:57:53.136Z",
+      "sourceRun": "ui-2026-10-29T06-54-28-222Z",
       "environment": {
         "dpr": 1,
         "height": 210,
-        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0",
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0",
         "width": 160
       }
     },
     "pixi-notification": {
-      "sha256": "fb59b077a853969505f0c61cfe176ac01021f3e3168a4be4376d5236543c7dab",
+      "sha256": "c2d7b1fb325cef046e75426d6240bc37695cb0b36a50b699e1e7e9d647bb0365",
       "reviewer": "Codex",
       "reviewMode": "user-delegated-agent",
-      "authorization": "2026-10-15 用户：帮我完成决策",
-      "reviewedAt": "2026-10-15T06:39:06.555Z",
-      "sourceRun": "ui-2026-10-15T06-37-30-972Z",
+      "authorization": "用户已明确委托 Codex 完成截图审阅决策；2026-10-29 要求移除桌宠按钮并改用右键菜单",
+      "reviewedAt": "2026-10-29T06:57:53.137Z",
+      "sourceRun": "ui-2026-10-29T06-54-28-222Z",
       "environment": {
         "dpr": 1,
         "height": 210,
-        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0",
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0",
         "width": 160
       }
     },
     "pixi-error": {
-      "sha256": "36ff0dc5263e21b339450922f53b306278dac00af1eabe7635112b39aaa02392",
+      "sha256": "317059d1996876ff1d908d27bcae1015cc87836f183c169aa23627fe01911001",
       "reviewer": "Codex",
       "reviewMode": "user-delegated-agent",
-      "authorization": "2026-10-15 用户：帮我完成决策",
-      "reviewedAt": "2026-10-15T06:39:06.556Z",
-      "sourceRun": "ui-2026-10-15T06-37-30-972Z",
+      "authorization": "用户已明确委托 Codex 完成截图审阅决策；2026-10-29 要求移除桌宠按钮并改用右键菜单",
+      "reviewedAt": "2026-10-29T06:57:53.138Z",
+      "sourceRun": "ui-2026-10-29T06-54-28-222Z",
       "environment": {
         "dpr": 1,
         "height": 210,
-        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0",
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0",
         "width": 160
       }
     },
     "pixi-done": {
-      "sha256": "3d11df8af2f864a4bc56d4d316a316243eb6e689b8aed512eb5baa3ebba114cc",
+      "sha256": "82746224a6ead5240b47a5be92959718f833ec1f034670934556562623198cb2",
       "reviewer": "Codex",
       "reviewMode": "user-delegated-agent",
-      "authorization": "2026-10-15 用户：帮我完成决策",
-      "reviewedAt": "2026-10-15T06:39:06.556Z",
-      "sourceRun": "ui-2026-10-15T06-37-30-972Z",
+      "authorization": "用户已明确委托 Codex 完成截图审阅决策；2026-10-29 要求移除桌宠按钮并改用右键菜单",
+      "reviewedAt": "2026-10-29T06:57:53.138Z",
+      "sourceRun": "ui-2026-10-29T06-54-28-222Z",
       "environment": {
         "dpr": 1,
         "height": 210,
-        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0",
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0",
         "width": 160
       }
     },
     "pixi-sleeping": {
-      "sha256": "76425941812380a3f8d9ee96eb974d7fab2b213214f5aa6c0256df8dfb305e7e",
+      "sha256": "bbdf82f8f0bc32ea3f7c888a21941decf4ff7d3d6b7353a4ca622c4d7b65ecce",
       "reviewer": "Codex",
       "reviewMode": "user-delegated-agent",
-      "authorization": "2026-10-15 用户：帮我完成决策",
-      "reviewedAt": "2026-10-15T06:39:06.557Z",
-      "sourceRun": "ui-2026-10-15T06-37-30-972Z",
+      "authorization": "用户已明确委托 Codex 完成截图审阅决策；2026-10-29 要求移除桌宠按钮并改用右键菜单",
+      "reviewedAt": "2026-10-29T06:57:53.139Z",
+      "sourceRun": "ui-2026-10-29T06-54-28-222Z",
       "environment": {
         "dpr": 1,
         "height": 210,
-        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0",
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0",
         "width": 160
       }
     },
     "dom-idle": {
-      "sha256": "30f4c34fe2edab2d0651ee6e229efe69b2a18fb2f8eda1f0ebc1ed03f4576cfb",
+      "sha256": "40024c58767c44a5d2c349318fba3b0e409ee5203b5dd93e08ecc3e44a828c92",
       "reviewer": "Codex",
       "reviewMode": "user-delegated-agent",
-      "authorization": "2026-10-15 用户：帮我完成决策",
-      "reviewedAt": "2026-10-15T06:39:06.558Z",
-      "sourceRun": "ui-2026-10-15T06-37-30-972Z",
+      "authorization": "用户已明确委托 Codex 完成截图审阅决策；2026-10-29 要求移除桌宠按钮并改用右键菜单",
+      "reviewedAt": "2026-10-29T06:57:53.140Z",
+      "sourceRun": "ui-2026-10-29T06-54-28-222Z",
       "environment": {
         "dpr": 1,
         "height": 210,
-        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0",
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0",
         "width": 160
       }
     },
     "dom-thinking": {
-      "sha256": "42ab06433662bfeef6fd584ac8a8cdb317f091e08e87c1deb7d3a700073026fa",
+      "sha256": "3a6e5477d22e67e4618cf25cc716d5dd483e5e811ec92451e2a41ff1aa5d957b",
       "reviewer": "Codex",
       "reviewMode": "user-delegated-agent",
-      "authorization": "2026-10-15 用户：帮我完成决策",
-      "reviewedAt": "2026-10-15T06:39:06.558Z",
-      "sourceRun": "ui-2026-10-15T06-37-30-972Z",
+      "authorization": "用户已明确委托 Codex 完成截图审阅决策；2026-10-29 要求移除桌宠按钮并改用右键菜单",
+      "reviewedAt": "2026-10-29T06:57:53.140Z",
+      "sourceRun": "ui-2026-10-29T06-54-28-222Z",
       "environment": {
         "dpr": 1,
         "height": 210,
-        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0",
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0",
         "width": 160
       }
     },
     "dom-working": {
-      "sha256": "42ab06433662bfeef6fd584ac8a8cdb317f091e08e87c1deb7d3a700073026fa",
+      "sha256": "6337a4374e1dc49960f9b6cc78937bae2c7849639ea8d1895f2604e1f24746e6",
       "reviewer": "Codex",
       "reviewMode": "user-delegated-agent",
-      "authorization": "2026-10-15 用户：帮我完成决策",
-      "reviewedAt": "2026-10-15T06:39:06.559Z",
-      "sourceRun": "ui-2026-10-15T06-37-30-972Z",
+      "authorization": "用户要求矫正干活中腿部杂色；沿用已委托的截图审阅，已检查实际双渲染模式及工作进入、持续、退出截图",
+      "reviewedAt": "2026-10-29T13:05:18.745445Z",
+      "sourceRun": "ui-20261029-working-colors-review",
       "environment": {
         "dpr": 1,
         "height": 210,
-        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0",
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0",
         "width": 160
       }
     },
     "dom-waiting": {
-      "sha256": "4d313b511151341b25e9384141ec57f67d819fb26f128509f9cd14f695fae3aa",
+      "sha256": "a9b45bf4fdf4b06a68bf25df1994ec2ac80c60031191527e33b0cad122e9cc58",
       "reviewer": "Codex",
       "reviewMode": "user-delegated-agent",
-      "authorization": "2026-10-15 用户：帮我完成决策",
-      "reviewedAt": "2026-10-15T06:39:06.559Z",
-      "sourceRun": "ui-2026-10-15T06-37-30-972Z",
+      "authorization": "用户已明确委托 Codex 完成截图审阅决策；2026-10-29 要求移除桌宠按钮并改用右键菜单",
+      "reviewedAt": "2026-10-29T06:57:53.141Z",
+      "sourceRun": "ui-2026-10-29T06-54-28-222Z",
       "environment": {
         "dpr": 1,
         "height": 210,
-        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0",
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0",
         "width": 160
       }
     },
     "dom-notification": {
-      "sha256": "93e9f7ea7cff98cabfbcc2a1d6b251b05243b46107612159c3de73b0a7ebee48",
+      "sha256": "18b379445e8b17fbe9481590a59296e16c4f6fec9b3fe82049523a7815e9135e",
       "reviewer": "Codex",
       "reviewMode": "user-delegated-agent",
-      "authorization": "2026-10-15 用户：帮我完成决策",
-      "reviewedAt": "2026-10-15T06:39:06.559Z",
-      "sourceRun": "ui-2026-10-15T06-37-30-972Z",
+      "authorization": "用户已明确委托 Codex 完成截图审阅决策；2026-10-29 要求移除桌宠按钮并改用右键菜单",
+      "reviewedAt": "2026-10-29T06:57:53.142Z",
+      "sourceRun": "ui-2026-10-29T06-54-28-222Z",
       "environment": {
         "dpr": 1,
         "height": 210,
-        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0",
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0",
         "width": 160
       }
     },
     "dom-error": {
-      "sha256": "1ab5613b117c96301579d8b883765414f88063469b0ad48632b3671be003c898",
+      "sha256": "886da9080b395211d58683ba83f311cf54aa4095f8832d98f928c18bd90a41d0",
       "reviewer": "Codex",
       "reviewMode": "user-delegated-agent",
-      "authorization": "2026-10-15 用户：帮我完成决策",
-      "reviewedAt": "2026-10-15T06:39:06.560Z",
-      "sourceRun": "ui-2026-10-15T06-37-30-972Z",
+      "authorization": "用户已明确委托 Codex 完成截图审阅决策；2026-10-29 要求移除桌宠按钮并改用右键菜单",
+      "reviewedAt": "2026-10-29T06:57:53.142Z",
+      "sourceRun": "ui-2026-10-29T06-54-28-222Z",
       "environment": {
         "dpr": 1,
         "height": 210,
-        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0",
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0",
         "width": 160
       }
     },
     "dom-done": {
-      "sha256": "371728b4f96c12a837856692a81d568f3f41b1159a64f59c7d063891627e9988",
+      "sha256": "36b930a78a9df90b80f69725a898d5a51769e48dc625bea1388290a2059e206f",
       "reviewer": "Codex",
       "reviewMode": "user-delegated-agent",
-      "authorization": "2026-10-15 用户：帮我完成决策",
-      "reviewedAt": "2026-10-15T06:39:06.560Z",
-      "sourceRun": "ui-2026-10-15T06-37-30-972Z",
+      "authorization": "用户已明确委托 Codex 完成截图审阅决策；2026-10-29 要求移除桌宠按钮并改用右键菜单",
+      "reviewedAt": "2026-10-29T06:57:53.143Z",
+      "sourceRun": "ui-2026-10-29T06-54-28-222Z",
       "environment": {
         "dpr": 1,
         "height": 210,
-        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0",
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0",
         "width": 160
       }
     },
     "dom-sleeping": {
-      "sha256": "01ef49b5f1132192b10bb83114af241d5059966c6d405cadbb227ab33642d452",
+      "sha256": "615d06b5a39b20a38b0b201fc96c954c3a3dc4ea27aac2491b15bc496a057aee",
       "reviewer": "Codex",
       "reviewMode": "user-delegated-agent",
-      "authorization": "2026-10-15 用户：帮我完成决策",
-      "reviewedAt": "2026-10-15T06:39:06.561Z",
-      "sourceRun": "ui-2026-10-15T06-37-30-972Z",
+      "authorization": "用户已明确委托 Codex 完成截图审阅决策；2026-10-29 要求移除桌宠按钮并改用右键菜单",
+      "reviewedAt": "2026-10-29T06:57:53.144Z",
+      "sourceRun": "ui-2026-10-29T06-54-28-222Z",
       "environment": {
         "dpr": 1,
         "height": 210,
-        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0",
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0",
         "width": 160
       }
     },
     "both-restore-codex": {
-      "sha256": "88f5090fb39ba407a93a38aad7a316f09e841efe82fb8711bab4b5209fb9d041",
+      "sha256": "359997c1e1c2cf446798b03b0abbe0aa97de12165363da76c474b9bd983ff13d",
       "reviewer": "Codex",
       "reviewMode": "user-delegated-agent",
-      "authorization": "2026-10-15 用户：帮我完成决策",
-      "reviewedAt": "2026-10-15T06:39:06.561Z",
-      "sourceRun": "ui-2026-10-15T06-37-30-972Z",
+      "authorization": "用户要求矫正干活中腿部杂色；沿用已委托的截图审阅，已检查实际双渲染模式及工作进入、持续、退出截图",
+      "reviewedAt": "2026-10-29T13:05:18.760814Z",
+      "sourceRun": "ui-20261029-working-colors-review",
       "environment": {
         "dpr": 1,
         "height": 210,
-        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0",
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0",
         "width": 160
       }
     },
     "imported-character": {
-      "sha256": "18d1045d8ae21b6dc97014c62ddba97a546c3d98560b1d84aa05d69304f5163e",
+      "sha256": "73cd8b0bf2e4c04f4db3030bc96b2170e2e365d0e11af00eb4fe24c277645297",
       "reviewer": "Codex",
       "reviewMode": "user-delegated-agent",
-      "authorization": "2026-10-15 用户：帮我完成决策",
-      "reviewedAt": "2026-10-15T06:39:06.562Z",
-      "sourceRun": "ui-2026-10-15T06-37-30-972Z",
+      "authorization": "用户已明确委托 Codex 完成截图审阅决策；2026-10-29 要求移除桌宠按钮并改用右键菜单",
+      "reviewedAt": "2026-10-29T06:57:53.145Z",
+      "sourceRun": "ui-2026-10-29T06-54-28-222Z",
       "environment": {
         "dpr": 1,
         "height": 210,
-        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0",
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0",
         "width": 160
       }
     }

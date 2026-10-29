@@ -105,30 +105,32 @@ async function check(name) {
     assert.equal(frame.pending, "0");
     assert.equal(frame.character, "builtin");
     assert.equal(frame.renderer, "dom");
+    assert.equal(frame.animationMode, "real");
+    assert.equal(frame.displayState, "idle");
     const health = JSON.parse((await localRequest(runtime, "GET", "/v2/health")).body);
     assert.equal(health.projection.activeSessions, 0);
     const config = JSON.parse(readFileSync(join(directory, "config/config.json"), "utf8"));
     assert.equal(config.renderer, "dom");
     assert.equal(config.reducedMotion, true);
-    const exitVia = name.startsWith("damaged-") ? "settings" : "pet";
-    if (exitVia === "settings") {
-      await request(port, "POST", `/session/${sessionId}/execute/sync`, {
-        script: "window.__TAURI_INTERNALS__.invoke('show_settings'); return true",
-        args: [],
-      });
-      let settingsReady = false;
-      while (Date.now() < until) {
-        const handles = await request(port, "GET", `/session/${sessionId}/window/handles`);
-        if (handles.includes("settings")) {
-          settingsReady = true;
-          break;
-        }
-        await pause(50);
+    assert.equal(config.manualAnimationEnabled, true);
+    assert.equal(config.state, undefined);
+    const exitVia = "settings";
+    await request(port, "POST", `/session/${sessionId}/execute/sync`, {
+      script: "window.__TAURI_INTERNALS__.invoke('show_settings'); return true",
+      args: [],
+    });
+    let settingsReady = false;
+    while (Date.now() < until) {
+      const handles = await request(port, "GET", `/session/${sessionId}/window/handles`);
+      if (handles.includes("settings")) {
+        settingsReady = true;
+        break;
       }
-      assert(settingsReady, "settings window did not open for exit check");
-      await request(port, "POST", `/session/${sessionId}/window`, { handle: "settings" });
+      await pause(50);
     }
-    const selector = exitVia === "pet" ? ".exit-button" : '[data-testid="exit-app"]';
+    assert(settingsReady, "settings window did not open for exit check");
+    await request(port, "POST", `/session/${sessionId}/window`, { handle: "settings" });
+    const selector = '[data-testid="exit-app"]';
     let exitReady = false;
     while (Date.now() < until) {
       exitReady = await request(port, "POST", `/session/${sessionId}/execute/sync`, {
@@ -157,6 +159,8 @@ async function check(name) {
       exitVia,
       exitCode: exit.code,
       runtimeRemoved: true,
+      previewPreferenceRetained: config.manualAnimationEnabled,
+      manualSelectionCleared: frame.animationMode === "real",
     });
   } catch (error) {
     reports.push({ name, passed: false, error: error.message });
@@ -178,7 +182,7 @@ try {
   writeFileSync(configPath, JSON.stringify(config));
   writeFileSync(join(characterRoot, imported, manifest.forms[0].image), "damaged test image");
   await check("damaged-character-falls-back-to-builtin-with-valid-preferences");
-  console.log("PASS: restart, damaged-character recovery and both visible exit buttons");
+  console.log("PASS: restart, damaged-character recovery and settings exit button");
 } catch (error) {
   console.error(error.message);
   process.exitCode = 1;

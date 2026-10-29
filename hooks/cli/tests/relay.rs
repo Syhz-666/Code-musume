@@ -63,6 +63,8 @@ fn server(path: &Path) -> std::thread::JoinHandle<EnvelopeV2> {
                 Err(e) => panic!("No relay connection: {e}"),
             }
         };
+        // Read with the existing deadline instead of racing the sender on an inherited mode.
+        conn.set_nonblocking(false).unwrap();
         conn.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
         let mut bytes = vec![];
         let mut buf = [0u8; 4096];

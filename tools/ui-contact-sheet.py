@@ -6,6 +6,8 @@ from PIL import Image, ImageDraw, ImageFont
 
 directory = Path(sys.argv[1]).resolve()
 visuals = json.loads((directory / "visual-results.json").read_text(encoding="utf-8"))
+for pattern in ("*manual-*.png", "animated-*.png", "thinking-*.png", "working-*.png"):
+    visuals.extend({"name": path.stem, "actual": str(path)} for path in sorted(directory.glob(pattern)))
 font = ImageFont.truetype("C:/Windows/Fonts/arial.ttf", 15)
 
 for group, columns, cell_width, cell_height in [("pets", 8, 184, 250), ("settings", 2, 872, 796)]:
@@ -14,7 +16,7 @@ for group, columns, cell_width, cell_height in [("pets", 8, 184, 250), ("setting
     sheet = Image.new("RGB", (columns * cell_width, rows * cell_height), "#eae7ef")
     draw = ImageDraw.Draw(sheet)
     for index, item in enumerate(items):
-        path = Path(item["actual"]).resolve()
+        path = Path(item.get("actual", directory / f"{item['name']}.png")).resolve()
         if not path.is_relative_to(directory):
             raise ValueError("Review input must belong to this test run")
         image = Image.open(path).convert("RGBA")

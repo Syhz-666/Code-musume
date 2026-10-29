@@ -55,9 +55,9 @@ export const config = {
     cases.push({ name: test.title, passed: result.passed, error: result.error?.message ?? null });
     if (!result.passed) {
       try {
-        const diagnostic = await browser.tauri.execute(async ({ core }) => ({
-          projection: await core.invoke("get_projection"),
-          config: await core.invoke("get_config"),
+        const diagnostic = await browser.execute(async () => ({
+          projection: await window.__TAURI_INTERNALS__.invoke("get_projection"),
+          config: await window.__TAURI_INTERNALS__.invoke("get_config"),
           view: { ...document.querySelector("#app")?.dataset },
           controls: [...document.querySelectorAll("select")].map((e) => ({
             id: e.dataset.testid,
