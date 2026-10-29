@@ -12,6 +12,7 @@ coverage/
 **/gen/schemas/
 
 # 编辑器 / IDE
+.vs/
 .vscode/*
 !.vscode/extensions.json
 .idea/
@@ -25,6 +26,8 @@ coverage/
 *.log
 *.tmp
 *.bak-*
+__pycache__/
+*.pyc
 tmp-shots/
 
 # 操作系统

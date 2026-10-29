@@ -7,6 +7,7 @@
       "!**/dist",
       "!**/dist-e2e",
       "!**/node_modules",
+      "!**/.vs",
       "!**/gen",
       "!**/coverage",
       "!**/.test-artifacts",
