@@ -1,0 +1,313 @@
+{
+  "schemaVersion": 1,
+  "id": "builtin",
+  "name": "代码娘 · 居家睡衣",
+  "defaultForm": "default",
+  "agentForms": {
+    "claude-code": "claude",
+    "codex": "codex"
+  },
+  "forms": [
+    {
+      "id": "default",
+      "image": "spritesheet.png",
+      "cellWidth": 192,
+      "cellHeight": 208,
+      "columns": 16,
+      "clips": {
+        "idle": {
+          "row": 0,
+          "column": 0,
+          "frames": 243,
+          "fps": 24,
+          "looping": true
+        },
+        "thinking": {
+          "image": "thinking.png",
+          "row": 3,
+          "column": 12,
+          "frames": 120,
+          "fps": 24,
+          "looping": true
+        },
+        "working": {
+          "image": "working.png",
+          "row": 2,
+          "column": 4,
+          "frames": 88,
+          "fps": 24,
+          "looping": true
+        },
+        "waiting-permission": {
+          "row": 15,
+          "frames": 1,
+          "fps": 1,
+          "looping": true,
+          "column": 5
+        },
+        "notification": {
+          "row": 15,
+          "frames": 1,
+          "fps": 1,
+          "looping": false,
+          "column": 6
+        },
+        "done": {
+          "row": 15,
+          "frames": 1,
+          "fps": 1,
+          "looping": false,
+          "column": 7
+        },
+        "error": {
+          "row": 15,
+          "frames": 1,
+          "fps": 1,
+          "looping": true,
+          "column": 8
+        },
+        "sleeping": {
+          "row": 15,
+          "frames": 1,
+          "fps": 1,
+          "looping": true,
+          "column": 9
+        },
+        "thinking-enter": {
+          "image": "thinking.png",
+          "row": 0,
+          "column": 0,
+          "frames": 60,
+          "fps": 48,
+          "looping": false
+        },
+        "thinking-exit": {
+          "image": "thinking.png",
+          "row": 11,
+          "column": 4,
+          "frames": 30,
+          "fps": 60,
+          "looping": false
+        },
+        "working-enter": {
+          "image": "working.png",
+          "row": 0,
+          "column": 0,
+          "frames": 36,
+          "fps": 48,
+          "looping": false
+        },
+        "working-exit": {
+          "image": "working.png",
+          "row": 7,
+          "column": 12,
+          "frames": 30,
+          "fps": 60,
+          "looping": false
+        }
+      },
+      "lookRows": false
+    },
+    {
+      "id": "claude",
+      "image": "spritesheet.png",
+      "cellWidth": 192,
+      "cellHeight": 208,
+      "columns": 16,
+      "clips": {
+        "idle": {
+          "row": 0,
+          "column": 0,
+          "frames": 243,
+          "fps": 24,
+          "looping": true
+        },
+        "thinking": {
+          "image": "thinking.png",
+          "row": 3,
+          "column": 12,
+          "frames": 120,
+          "fps": 24,
+          "looping": true
+        },
+        "working": {
+          "image": "working.png",
+          "row": 2,
+          "column": 4,
+          "frames": 88,
+          "fps": 24,
+          "looping": true
+        },
+        "waiting-permission": {
+          "row": 15,
+          "frames": 1,
+          "fps": 1,
+          "looping": true,
+          "column": 5
+        },
+        "notification": {
+          "row": 15,
+          "frames": 1,
+          "fps": 1,
+          "looping": false,
+          "column": 6
+        },
+        "done": {
+          "row": 15,
+          "frames": 1,
+          "fps": 1,
+          "looping": false,
+          "column": 7
+        },
+        "error": {
+          "row": 15,
+          "frames": 1,
+          "fps": 1,
+          "looping": true,
+          "column": 8
+        },
+        "sleeping": {
+          "row": 15,
+          "frames": 1,
+          "fps": 1,
+          "looping": true,
+          "column": 9
+        },
+        "thinking-enter": {
+          "image": "thinking.png",
+          "row": 0,
+          "column": 0,
+          "frames": 60,
+          "fps": 48,
+          "looping": false
+        },
+        "thinking-exit": {
+          "image": "thinking.png",
+          "row": 11,
+          "column": 4,
+          "frames": 30,
+          "fps": 60,
+          "looping": false
+        },
+        "working-enter": {
+          "image": "working.png",
+          "row": 0,
+          "column": 0,
+          "frames": 36,
+          "fps": 48,
+          "looping": false
+        },
+        "working-exit": {
+          "image": "working.png",
+          "row": 7,
+          "column": 12,
+          "frames": 30,
+          "fps": 60,
+          "looping": false
+        }
+      },
+      "lookRows": false
+    },
+    {
+      "id": "codex",
+      "image": "spritesheet.png",
+      "cellWidth": 192,
+      "cellHeight": 208,
+      "columns": 16,
+      "clips": {
+        "idle": {
+          "row": 0,
+          "column": 0,
+          "frames": 243,
+          "fps": 24,
+          "looping": true
+        },
+        "thinking": {
+          "image": "thinking.png",
+          "row": 3,
+          "column": 12,
+          "frames": 120,
+          "fps": 24,
+          "looping": true
+        },
+        "working": {
+          "image": "working.png",
+          "row": 2,
+          "column": 4,
+          "frames": 88,
+          "fps": 24,
+          "looping": true
+        },
+        "waiting-permission": {
+          "row": 15,
+          "frames": 1,
+          "fps": 1,
+          "looping": true,
+          "column": 5
+        },
+        "notification": {
+          "row": 15,
+          "frames": 1,
+          "fps": 1,
+          "looping": false,
+          "column": 6
+        },
+        "done": {
+          "row": 15,
+          "frames": 1,
+          "fps": 1,
+          "looping": false,
+          "column": 7
+        },
+        "error": {
+          "row": 15,
+          "frames": 1,
+          "fps": 1,
+          "looping": true,
+          "column": 8
+        },
+        "sleeping": {
+          "row": 15,
+          "frames": 1,
+          "fps": 1,
+          "looping": true,
+          "column": 9
+        },
+        "thinking-enter": {
+          "image": "thinking.png",
+          "row": 0,
+          "column": 0,
+          "frames": 60,
+          "fps": 48,
+          "looping": false
+        },
+        "thinking-exit": {
+          "image": "thinking.png",
+          "row": 11,
+          "column": 4,
+          "frames": 30,
+          "fps": 60,
+          "looping": false
+        },
+        "working-enter": {
+          "image": "working.png",
+          "row": 0,
+          "column": 0,
+          "frames": 36,
+          "fps": 48,
+          "looping": false
+        },
+        "working-exit": {
+          "image": "working.png",
+          "row": 7,
+          "column": 12,
+          "frames": 30,
+          "fps": 60,
+          "looping": false
+        }
+      },
+      "lookRows": false
+    }
+  ],
+  "license": null
+}

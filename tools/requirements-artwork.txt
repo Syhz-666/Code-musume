@@ -1,0 +1,4 @@
+Pillow==11.0.0
+numpy==2.0.2
+scipy==1.15.2
+imageio-ffmpeg==0.7.0
