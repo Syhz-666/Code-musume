@@ -88,9 +88,21 @@ try {
     const env = {
       CODE_MUSUME_UI_RUN_DIR: runDir,
       CODE_MUSUME_UI_REVIEW: process.argv.includes("--review-candidates") ? "1" : "0",
+      CODE_MUSUME_UI_SYSTEM_MOTION: process.argv.includes("--system-reduced-motion")
+        ? "reduce"
+        : "no-preference",
       CARGO_TARGET_DIR: join(root, "target/e2e"),
       VITE_E2E: "1",
     };
+    const revision = spawnSync("git", ["rev-parse", "HEAD"], {
+      cwd: root,
+      encoding: "utf8",
+      windowsHide: true,
+    });
+    const dirty = spawnSync("git", ["diff", "--quiet", "HEAD"], { cwd: root, windowsHide: true });
+    env.CODE_MUSUME_SOURCE_REVISION =
+      process.env.GITHUB_SHA ?? (revision.status === 0 ? revision.stdout.trim() : "unavailable");
+    env.CODE_MUSUME_SOURCE_DIRTY = String(dirty.status === 1);
     if (!process.argv.includes("--skip-build")) {
       run("cargo", ["build", "-p", "code-musume-hook"]);
       pm(
@@ -115,11 +127,14 @@ try {
     } catch (error) {
       uiFailure = error;
     }
-    run(process.execPath, ["tools/desktop-cold-start.mjs"], env);
+    if (env.CODE_MUSUME_UI_SYSTEM_MOTION !== "reduce")
+      run(process.execPath, ["tools/desktop-cold-start.mjs"], env);
     if (uiFailure) throw uiFailure;
   }
   if (!["replay", "ui", "verify"].includes(action))
-    throw new Error("Usage: desktop.mjs replay|ui|verify [--skip-build] [--review-candidates]");
+    throw new Error(
+      "Usage: desktop.mjs replay|ui|verify [--skip-build] [--review-candidates] [--system-reduced-motion]",
+    );
 } catch (error) {
   console.error(error.message);
   process.exitCode = 1;

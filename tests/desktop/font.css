@@ -11,3 +11,17 @@ body * {
   /* biome-ignore lint/complexity/noImportantStyles: isolate e2e snapshots from every system/font shorthand */
   font-family: "Code Musume Test", sans-serif !important;
 }
+/* Fixed classic scrollbar geometry avoids host/Chromium theme differences on
+   the two settings pages that overflow. This does not hide any content. */
+::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+::-webkit-scrollbar-track {
+  background: #f7f6f9;
+}
+::-webkit-scrollbar-thumb {
+  background: #b8afc8;
+  border: 3px solid #f7f6f9;
+  border-radius: 8px;
+}

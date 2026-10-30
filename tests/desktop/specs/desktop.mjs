@@ -24,6 +24,11 @@ describe("Actual desktop event chain and settings", () => {
   before(async () => {
     await browser.setTimeout({ script: 2000 });
     await selectWindow("pet");
+    assert.equal(
+      await browser.execute(() => matchMedia("(prefers-reduced-motion: reduce)").matches),
+      false,
+      "Animation suite requires an explicit no-preference test environment",
+    );
     await pet({ state: "idle" });
     assert.equal((await browser.$$("#app button")).length, 0);
     assert.equal(await (await browser.$(".character")).getAttribute("title"), "右键打开菜单");

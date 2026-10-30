@@ -12,6 +12,7 @@ export const root = fileURLToPath(new URL("../..", import.meta.url));
 export const runDir = process.env.CODE_MUSUME_UI_RUN_DIR;
 export const visuals = [];
 const renderedLatencies = [];
+let hookSequence = 0;
 // WDIO 1.5.0 caches its async callback by window label. Use the standard sync
 // endpoint (which awaits promises) so commands also work after window recreation.
 export async function nativeInvoke(command, args = {}) {
@@ -109,6 +110,10 @@ export async function hook(agent, event, extra = {}, session = "ui-session", tur
     [agent === "claude-code" ? "prompt_id" : "turn_id"]: turn,
     ...extra,
   };
+  const sequence = ++hookSequence;
+  const tracePath = join(runDir, `hook-${String(sequence).padStart(3, "0")}.json`);
+  const input = JSON.stringify(payload);
+  const started = performance.now();
   await new Promise((ok, reject) => {
     const child = spawn(
       join(root, "target/debug/code-musume-hook.exe"),
@@ -119,6 +124,8 @@ export async function hook(agent, event, extra = {}, session = "ui-session", tur
         event,
         "--runtime-file",
         join(runDir, "runtime/runtime.dev.json"),
+        "--diagnostic-file",
+        tracePath,
       ],
       { windowsHide: true, stdio: ["pipe", "pipe", "pipe"] },
     );
@@ -134,13 +141,32 @@ export async function hook(agent, event, extra = {}, session = "ui-session", tur
       try {
         assert.equal(code, 0);
         assert.equal(output, "");
+        let report = null;
+        try {
+          if (existsSync(tracePath)) report = JSON.parse(readFileSync(tracePath, "utf8"));
+        } catch {
+          /* Optional diagnostics must not turn a delivered event into a test failure. */
+        }
+        console.log(
+          `[hook] ${JSON.stringify({
+            sequence,
+            agent,
+            event,
+            exitCode: code,
+            elapsedMs: performance.now() - started,
+            traceId: report?.traceId,
+            outcome: report?.outcome ?? "report-missing-or-deadline",
+            input: report?.input,
+            httpStatus: report?.httpStatus,
+          })}`,
+        );
         ok();
       } catch (e) {
         reject(e);
       }
     });
     child.stdin.on("error", reject);
-    child.stdin.end(JSON.stringify(payload));
+    child.stdin.end(input);
   });
 }
 export async function pet(expected, { latency = false, prepare = true } = {}) {
@@ -240,6 +266,10 @@ export async function screenshot(name) {
     userAgent: navigator.userAgent,
     font: getComputedStyle(document.body).fontFamily,
     language: navigator.language,
+    systemReducedMotion: matchMedia("(prefers-reduced-motion: reduce)").matches,
+    viewportWidth: document.documentElement.clientWidth,
+    scrollbarWidth: innerWidth - document.documentElement.clientWidth,
+    scrollHeight: document.documentElement.scrollHeight,
   }));
   assert.equal(environment.dpr, 1, "Visual baseline requires controlled DPR=1");
   const bytes = Buffer.from(await browser.takeScreenshot(), "base64");
@@ -270,10 +300,35 @@ export async function screenshot(name) {
     const diff = new PNG({ width: image.width, height: image.height });
     const pixels = pixelmatch(expected.data, image.data, diff.data, image.width, image.height, {
       threshold: 0.1,
+      diffMask: true,
     });
     const ratio = pixels / (image.width * image.height);
     writeFileSync(join(runDir, `${name}.diff.png`), PNG.sync.write(diff));
-    visuals.push({ name, status: ratio <= 0.005 ? "passed" : "failed", ratio, environment });
+    let bounds = null;
+    for (let y = 0; y < image.height; y++)
+      for (let x = 0; x < image.width; x++)
+        if (diff.data[(y * image.width + x) * 4 + 3]) {
+          if (!bounds) bounds = { left: x, right: x, top: y, bottom: y };
+          else {
+            bounds.left = Math.min(bounds.left, x);
+            bounds.right = Math.max(bounds.right, x);
+            bounds.top = Math.min(bounds.top, y);
+            bounds.bottom = Math.max(bounds.bottom, y);
+          }
+        }
+    visuals.push({
+      name,
+      status: ratio <= 0.005 ? "passed" : "failed",
+      ratio,
+      pixels,
+      bounds,
+      environment,
+      baselineEnvironment: approval.environment,
+    });
+    if (ratio > 0.005)
+      console.error(
+        `[visual] ${name}: ${(ratio * 100).toFixed(2)}% > 0.5%; ${JSON.stringify({ bounds, actual: environment, baseline: approval.environment })}`,
+      );
     writeFileSync(join(runDir, "visual-results.json"), JSON.stringify(visuals, null, 2));
     // Keep exercising the remaining states. The suite's final hook fails on any
     // visual mismatch, without leaving a permission/preview state mid-scenario.

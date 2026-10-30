@@ -2,6 +2,8 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import net from "node:net";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { saveUiFailure } from "./diagnostics.mjs";
+import { browserArguments, systemMotion } from "./environment.mjs";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
 const runDir = process.env.CODE_MUSUME_UI_RUN_DIR;
@@ -18,7 +20,7 @@ const cases = [];
 export const config = {
   runner: "local",
   framework: "mocha",
-  specs: ["./specs/*.mjs"],
+  specs: [systemMotion === "reduce" ? "./specs/system-motion.mjs" : "./specs/desktop.mjs"],
   maxInstances: 1,
   logLevel: "warn",
   outputDir: join(runDir, "logs"),
@@ -40,8 +42,7 @@ export const config = {
           CODE_MUSUME_DATA_DIR: join(runDir, "runtime"),
           CODE_MUSUME_CONFIG_DIR: join(runDir, "config"),
           WEBVIEW2_USER_DATA_FOLDER: join(runDir, "webview"),
-          WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:
-            "--force-device-scale-factor=1 --force-color-profile=srgb --disable-lcd-text",
+          WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: browserArguments,
         },
       },
     ],
@@ -56,21 +57,11 @@ export const config = {
     cases.push({ name: test.title, passed: result.passed, error: result.error?.message ?? null });
     if (!result.passed) {
       try {
-        const diagnostic = await browser.execute(async () => ({
-          projection: await window.__TAURI_INTERNALS__.invoke("get_projection"),
-          config: await window.__TAURI_INTERNALS__.invoke("get_config"),
-          diagnostics: await window.__TAURI_INTERNALS__.invoke("get_diagnostics"),
-          preview: await window.__TAURI_INTERNALS__.invoke("get_animation_preview"),
-          view: { ...document.querySelector("#app")?.dataset },
-          controls: [...document.querySelectorAll("select")].map((e) => ({
-            id: e.dataset.testid,
-            value: e.value,
-          })),
-        }));
-        writeFileSync(
-          join(runDir, `failure-${cases.length}.json`),
-          JSON.stringify(diagnostic, null, 2),
-        );
+        await saveUiFailure(cases.length, test.title, result.error?.message ?? "test-failed");
+      } catch {
+        console.error("[diagnostic] Failure report could not be written");
+      }
+      try {
         await browser.saveScreenshot(join(runDir, `failure-${cases.length}.png`));
       } catch {
         /* A crashed webview has no screenshot. */
@@ -80,5 +71,14 @@ export const config = {
       join(runDir, "functional-results.json"),
       JSON.stringify({ at: new Date().toISOString(), synthetic: true, cases }, null, 2),
     );
+  },
+  async afterHook(test, _context, result) {
+    if (result.error) {
+      try {
+        await saveUiFailure(`hook-${cases.length}`, test.title ?? "hook", result.error.message);
+      } catch {
+        console.error("[diagnostic] Hook failure report unavailable");
+      }
+    }
   },
 };

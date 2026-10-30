@@ -5,6 +5,7 @@ import http from "node:http";
 import net from "node:net";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { browserArguments } from "../tests/desktop/environment.mjs";
 import { localRequest } from "./capture-live-hooks.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
@@ -58,7 +59,7 @@ async function check(name) {
       CODE_MUSUME_DATA_DIR: join(directory, "runtime"),
       CODE_MUSUME_CONFIG_DIR: join(directory, "config"),
       WEBVIEW2_USER_DATA_FOLDER: join(directory, "webview"),
-      WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: "--force-device-scale-factor=1",
+      WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: browserArguments,
       TAURI_WEBDRIVER_PORT: String(port),
     },
   });

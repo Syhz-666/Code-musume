@@ -22,12 +22,17 @@ jobs:
       - run: pnpm build
       - run: cargo build --workspace
       - run: powershell -NoProfile -File tools/smoke.ps1
+      - name: Smoke with UTF-8 console preamble regression
+        run: powershell -NoProfile -NonInteractive -Command "[Console]::InputEncoding=[Text.Encoding]::UTF8; & './tools/smoke.ps1'"
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
           name: smoke-failure-evidence
           path: |
             .test-artifacts/smoke-*/failure-projection.json
+            .test-artifacts/smoke-*/failure-diagnostics.json
+            .test-artifacts/smoke-*/pipeline-verification.json
+            .test-artifacts/smoke-*/hook-*.json
   desktop-ui:
     runs-on: windows-latest
     steps:
@@ -44,6 +49,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --dir tests/desktop install --frozen-lockfile
       - run: pnpm test:ui
+      - name: System reduced-motion acceptance
+        run: pnpm test:ui --skip-build --system-reduced-motion
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -54,6 +61,8 @@ jobs:
             .test-artifacts/ui-*/cold-start-results.json
             .test-artifacts/ui-*/render-latencies.json
             .test-artifacts/ui-*/acceptance.json
+            .test-artifacts/ui-*/system-motion-results.json
             .test-artifacts/ui-*/failure-*.json
+            .test-artifacts/ui-*/hook-*.json
             .test-artifacts/ui-*/logs/**
             .test-artifacts/ui-*/*.png
