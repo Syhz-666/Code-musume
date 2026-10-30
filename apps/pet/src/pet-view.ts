@@ -506,6 +506,27 @@ function draw() {
       sprite.height = (144 * form.cellHeight) / form.cellWidth;
     }
   }
+  if (import.meta.env.VITE_E2E === "1") {
+    // Synchronous evidence cannot coalesce multiple draws like a MutationObserver.
+    // Both the fields and event are removed from production builds.
+    Object.assign(hostNode.dataset, {
+      frameSampledAtMs: String(renderNow),
+      frameFps: String(clip.fps),
+    });
+    window.dispatchEvent(
+      new CustomEvent("code-musume:e2e-frame", {
+        detail: {
+          frame: index,
+          fps: clip.fps,
+          atMs: renderNow,
+          state,
+          segment: sample.key,
+          phase: sample.phase,
+          ready: visualReady(),
+        },
+      }),
+    );
+  }
   if (app) app.ticker.maxFPS = displayFPS();
   submitReceipt();
 }

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { PNG } from "pngjs";
+import { assertEntryStartsAtBeginning, observePreviewEntry } from "../animation-observation.mjs";
 import {
   choose,
   health,
@@ -278,20 +279,18 @@ describe("Actual desktop event chain and settings", () => {
         return value.segment === "sleeping" && value.visualReady === "true";
       });
       await browser.pause(650);
-      await nativeInvoke("set_animation_preview_state", { state: "thinking" });
-      await browser.waitUntil(
-        async () => {
-          const value = await browser.execute(() => ({
-            ...document.querySelector("#app").dataset,
-          }));
-          return value.segment === "thinking-enter" && value.visualReady === "true";
-        },
-        { interval: 20 },
+      const wake = await observePreviewEntry("thinking", "thinking-enter");
+      // Deliberately read late: the recorded beginning must survive slow driver replies.
+      await browser.pause(450);
+      const lateView = await browser.execute(() => ({ ...document.querySelector("#app").dataset }));
+      writeFileSync(
+        join(runDir, `thinking-${renderer}-wake.json`),
+        JSON.stringify({ renderer, ...wake, lateView }, null, 2),
       );
-      assert(
-        Number(await browser.execute(() => document.querySelector("#app").dataset.frame)) < 20,
-        "Waking from low FPS must start near the entry's beginning",
+      console.log(
+        `[animation-entry] ${JSON.stringify({ renderer, firstFrame: wake.samples[0]?.frame, firstReadyFrame: wake.firstReady?.frame, lateFrame: lateView.frame })}`,
       );
+      assertEntryStartsAtBeginning(wake);
       writeFileSync(
         join(runDir, `thinking-${renderer}-wake.png`),
         Buffer.from(await browser.takeScreenshot(), "base64"),
