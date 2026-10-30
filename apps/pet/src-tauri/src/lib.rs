@@ -1,5 +1,6 @@
 mod animation_preview;
 mod characters;
+mod pipeline_diagnostics;
 mod platform;
 mod render_receipts;
 mod service;
@@ -184,6 +185,10 @@ async fn get_diagnostics(s: State<'_, Arc<Native>>) -> Result<Vec<Diagnostic>, S
     s.diagnostics().await
 }
 #[tauri::command]
+async fn get_pipeline_diagnostics(s: State<'_, Arc<Native>>) -> Result<serde_json::Value, String> {
+    s.diagnostic_report().await
+}
+#[tauri::command]
 async fn reset_sessions(s: State<'_, Arc<Native>>) -> Result<(), String> {
     s.reset().await;
     Ok(())
@@ -284,14 +289,27 @@ fn report_rendered(
     revision: u64,
 ) -> bool {
     let preview = s.animation_preview.lock().unwrap();
-    window.label() == "pet"
+    let accepted = window.label() == "pet"
         && !preview.active()
         && s.render_receipts.lock().unwrap().acknowledge(
             &s.runtime.instance_id,
             &instance_id,
             revision,
             std::time::Instant::now(),
-        )
+        );
+    let mut trace = pipeline_diagnostics::PipelineTrace::new(
+        "render",
+        if accepted {
+            "frame-submitted"
+        } else if preview.active() {
+            "manual-preview-active"
+        } else {
+            "receipt-not-current"
+        },
+    );
+    trace.revision = Some(revision);
+    s.trace(trace);
+    accepted
 }
 #[cfg(feature = "e2e")]
 #[tauri::command]
@@ -492,6 +510,7 @@ pub fn run() {
             set_animation_preview_enabled,
             set_animation_preview_state,
             get_diagnostics,
+            get_pipeline_diagnostics,
             reset_sessions,
             list_characters,
             get_character,

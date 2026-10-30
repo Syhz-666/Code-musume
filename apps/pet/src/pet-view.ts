@@ -453,6 +453,8 @@ function draw() {
     spriteColumn: String(position.column),
     spriteRow: String(position.row),
     animationRunning: String(animate && clip.frames > 1),
+    systemReducedMotion: String(motion.matches),
+    configuredReducedMotion: String(config.reducedMotion),
     segment: sample.key,
     animationPhase: sample.phase,
     visualState: sample.state,

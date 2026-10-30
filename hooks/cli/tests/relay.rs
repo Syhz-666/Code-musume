@@ -145,6 +145,66 @@ fn native_hook_transmits_exact_payload_and_silent_success() {
     assert!(out.stdout.is_empty() && out.stderr.is_empty());
     assert_eq!(handle.join().unwrap().payload, input);
 }
+#[test]
+fn opt_in_report_explains_bom_and_delivery_without_saving_input_or_token() {
+    let t = Sandbox::new();
+    let handle = server(&t.path);
+    let report = t.path.join("hook-diagnostic.json");
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_code-musume-hook"));
+    cmd.args([
+        "--agent",
+        "codex",
+        "--event",
+        "PreToolUse",
+        "--runtime",
+        "dev",
+        "--diagnostic-file",
+    ])
+    .arg(&report)
+    .env("CODE_MUSUME_DATA_DIR", &t.path);
+    let input =
+        "\u{feff}{\"session_id\":\"private-session\",\"prompt\":\"never-save-this-content\"}";
+    let out = run(cmd, input);
+    assert!(out.status.success() && out.stdout.is_empty() && out.stderr.is_empty());
+    let envelope = handle.join().unwrap();
+    assert!(envelope.parse_error.is_some());
+    let bytes = fs::read_to_string(report).unwrap();
+    let value: serde_json::Value = serde_json::from_str(&bytes).unwrap();
+    assert_eq!(value["outcome"], "http-delivered");
+    assert_eq!(value["httpStatus"], 202);
+    assert_eq!(value["input"]["errorKind"], "utf8-bom");
+    assert_eq!(value["input"]["utf8Bom"], true);
+    assert_eq!(value["input"]["jsonValid"], false);
+    for secret in [
+        "private-session",
+        "never-save-this-content",
+        &"a".repeat(64),
+    ] {
+        assert!(!bytes.contains(secret));
+    }
+}
+#[test]
+fn opt_in_report_distinguishes_missing_runtime_from_http_rejection() {
+    let t = Sandbox::new();
+    let report = t.path.join("missing-runtime.json");
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_code-musume-hook"));
+    cmd.args([
+        "--agent",
+        "codex",
+        "--event",
+        "Stop",
+        "--runtime",
+        "dev",
+        "--diagnostic-file",
+    ])
+    .arg(&report)
+    .env("CODE_MUSUME_DATA_DIR", &t.path);
+    let out = run(cmd, r#"{"session_id":"private-session"}"#);
+    assert!(out.status.success() && out.stdout.is_empty() && out.stderr.is_empty());
+    let value: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
+    assert_eq!(value["outcome"], "runtime-unavailable");
+    assert!(value["httpStatus"].is_null());
+}
 #[cfg(windows)]
 #[test]
 fn codex_encoded_windows_command_forwards_utf8_and_special_path() {

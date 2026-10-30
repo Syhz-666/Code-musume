@@ -11,6 +11,7 @@
     "test:replay": "node tools/desktop.mjs replay",
     "test:ui": "node tools/desktop.mjs ui",
     "test:tools": "node --test tools/*.test.mjs",
+    "diagnostics": "node tools/diagnostic-report.mjs",
     "verify:desktop": "node tools/desktop.mjs verify",
     "typecheck": "pnpm -r typecheck",
     "lint": "biome check .",

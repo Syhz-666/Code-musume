@@ -1,3 +1,4 @@
+use super::pipeline_diagnostics::{PipelineDiagnostics, PipelineTrace};
 use axum::{
     body::Bytes,
     extract::{DefaultBodyLimit, State},
@@ -34,6 +35,7 @@ enum Message {
         oneshot::Sender<Result<Config, String>>,
     ),
     Diagnostics(oneshot::Sender<Vec<Diagnostic>>),
+    Inspect(oneshot::Sender<(Projection, Vec<Diagnostic>)>),
     Reset,
     Position(Position),
     PreviewEnabled(bool, oneshot::Sender<Result<AnimationPreview, String>>),
@@ -73,9 +75,36 @@ pub struct Native {
     pub render_fps: Mutex<Option<(Instant, f64)>>,
     pub render_receipts: Mutex<super::render_receipts::RenderReceipts>,
     pub animation_preview: Mutex<super::animation_preview::PreviewController>,
+    pipeline: Mutex<PipelineDiagnostics>,
     clock: Clock,
 }
 impl Native {
+    pub fn trace(&self, entry: PipelineTrace) {
+        self.pipeline
+            .lock()
+            .unwrap()
+            .record(entry, self.clock.now());
+    }
+    pub async fn diagnostic_report(&self) -> Result<serde_json::Value, String> {
+        let (tx, rx) = oneshot::channel();
+        self.tx
+            .send(Message::Inspect(tx))
+            .await
+            .map_err(|_| "核心已停止")?;
+        let (projection, diagnostics) = rx.await.map_err(|_| "核心已停止")?;
+        let pipeline = self.pipeline.lock().unwrap().snapshot();
+        let preview = self.animation_preview.lock().unwrap().snapshot();
+        let receipt = self.render_receipts.lock().unwrap().latest.clone();
+        Ok(serde_json::json!({
+            "v": 2, "appVersion": self.runtime.app_version,
+            "instanceId": self.runtime.instance_id, "capturedAtMs": self.clock.now(),
+            "platform": std::env::consts::OS, "arch": std::env::consts::ARCH,
+            "queue": {"entries": MAX_QUEUE_ENTRIES-self.tx.capacity(), "bytes": self.bytes.load(Ordering::SeqCst),
+                "limitEntries": MAX_QUEUE_ENTRIES, "limitBytes": MAX_QUEUE_BYTES, "unprocessedLoss": self.lost.load(Ordering::SeqCst)},
+            "projection": projection, "coreDiagnostics": diagnostics,
+            "pipeline": pipeline, "preview": preview, "renderReceipt": receipt,
+        }))
+    }
     pub fn start(app: Option<AppHandle>, mode: &str) -> Result<Arc<Self>, String> {
         let path = config_dir().join("config.json");
         let mut config = match fs::read(&path) {
@@ -140,6 +169,7 @@ impl Native {
                 config.manual_animation_enabled,
             )),
             tx,
+            pipeline: Mutex::new(PipelineDiagnostics::default()),
             bytes: AtomicUsize::new(0),
             lost: AtomicU64::new(0),
             config: Mutex::new(config.clone()),
@@ -166,13 +196,23 @@ impl Native {
                 let mut received = None;
                 tokio::select! {
                     msg=rx.recv()=>match msg{
-                        Some(Message::Event(e,size,at))=>{received=Some(at);state.bytes.fetch_sub(size,Ordering::SeqCst);engine.ingest(e,state.clock.now());},
+                        Some(Message::Event(e,size,at))=>{
+                            received=Some(at);state.bytes.fetch_sub(size,Ordering::SeqCst);
+                            let mut trace=PipelineTrace::event("core","processed",&e);
+                            trace.before=Some((&engine.snapshot()).into());
+                            engine.ingest(e,state.clock.now());
+                            trace.outcome=engine.latest_diagnostic().map(|d|d.outcome.clone()).unwrap_or_else(||"no-outcome".into());
+                            trace.after=Some((&engine.snapshot()).into());
+                            trace.elapsed_ms=Some(at.elapsed().as_secs_f64()*1000.0);
+                            state.trace(trace);
+                        },
                         Some(Message::Subscribe(id,c,reply))=>{let label=id.split(':').next().unwrap_or("");subscribers.retain(|old,_|old.split(':').next()!=Some(label));let p=engine.snapshot();let _=c.send(p.clone());subscribers.insert(id,c);let _=reply.send(p);},
                         Some(Message::Unsubscribe(id))=>{subscribers.remove(&id);},
                         Some(Message::Get(reply))=>{engine.tick(state.clock.now());let _=reply.send(engine.snapshot());},
                         #[cfg(feature = "e2e")]
                         Some(Message::AdvanceClock(ms,reply))=>{state.clock.offset.fetch_add(ms,Ordering::SeqCst);engine.tick(state.clock.now());let _=reply.send(engine.snapshot());},
                         Some(Message::Diagnostics(reply))=>{let _=reply.send(engine.diagnostics());},
+                        Some(Message::Inspect(reply))=>{let _=reply.send((engine.snapshot(),engine.diagnostics()));},
                         Some(Message::Reset)=>engine.reset(now),
                         Some(Message::Position(p))=>{engine.config.position=Some(p);*state.config.lock().unwrap()=engine.config.clone();position_dirty=true;last_position=Instant::now();},
                         Some(Message::PreviewEnabled(enabled, reply))=>{
@@ -242,12 +282,17 @@ impl Native {
                         }
                         c.send(p.clone()).is_ok()
                     });
+                    let mut trace = PipelineTrace::new("projection", "published");
+                    trace.after = Some((&p).into());
+                    trace.subscribers = Some(subscribers.len());
+                    state.trace(trace);
                 }
             }
         });
         let router = Router::new()
             .route("/v2/event", post(receive))
             .route("/v2/health", get(health))
+            .route("/v2/diagnostics", get(diagnostic_report))
             .layer(DefaultBodyLimit::max(MAX_ENVELOPE_BYTES))
             .layer(middleware::from_fn_with_state(native.clone(), authorize))
             .with_state(native.clone());
@@ -364,6 +409,9 @@ async fn authorize(
     next: Next,
 ) -> Response {
     if headers.contains_key("origin") {
+        let mut trace = PipelineTrace::new("http-auth", "origin-rejected");
+        trace.status = Some(403);
+        s.trace(trace);
         return StatusCode::FORBIDDEN.into_response();
     }
     let supplied = headers
@@ -374,6 +422,9 @@ async fn authorize(
     if supplied.len() != s.runtime.token.len()
         || !bool::from(supplied.as_bytes().ct_eq(s.runtime.token.as_bytes()))
     {
+        let mut trace = PipelineTrace::new("http-auth", "authentication-rejected");
+        trace.status = Some(401);
+        s.trace(trace);
         return StatusCode::UNAUTHORIZED.into_response();
     }
     let allowed = {
@@ -390,11 +441,17 @@ async fn authorize(
     };
     if !allowed {
         s.lost.fetch_add(1, Ordering::SeqCst);
+        let mut trace = PipelineTrace::new("http-entry", "rate-limited");
+        trace.status = Some(429);
+        s.trace(trace);
         return StatusCode::TOO_MANY_REQUESTS.into_response();
     }
     let response = next.run(request).await;
     if response.status() == StatusCode::PAYLOAD_TOO_LARGE {
         s.lost.fetch_add(1, Ordering::SeqCst);
+        let mut trace = PipelineTrace::new("http-entry", "envelope-too-large");
+        trace.status = Some(413);
+        s.trace(trace);
     }
     response
 }
@@ -404,16 +461,30 @@ async fn receive(State(s): State<Arc<Native>>, body: Bytes) -> Response {
         Ok(e) => e,
         Err(_) => {
             s.lost.fetch_add(1, Ordering::SeqCst);
+            let mut trace = PipelineTrace::new("http-receive", "envelope-json-invalid");
+            trace.status = Some(400);
+            trace.input = Some(diagnostics::InputDiagnostics::inspect(&body));
+            s.trace(trace);
             return StatusCode::BAD_REQUEST.into_response();
         }
     };
     if !e.validate() {
         s.lost.fetch_add(1, Ordering::SeqCst);
+        let mut trace = PipelineTrace::event("http-receive", "envelope-invalid", &e);
+        trace.status = Some(400);
+        s.trace(trace);
         return StatusCode::BAD_REQUEST.into_response();
     }
     let size = body.len();
     let id = e.id.clone();
+    let mut trace = PipelineTrace::event("http-receive", "received", &e);
+    trace.input = Some(diagnostics::InputDiagnostics::inspect(e.payload.as_bytes()));
+    s.trace(trace);
     if !enqueue(&s.tx, &s.bytes, &s.lost, e, size, received) {
+        let mut trace = PipelineTrace::new("http-queue", "queue-unavailable");
+        trace.event_id = Some(code_musume_core::adapter::short_hash(&id));
+        trace.status = Some(429);
+        s.trace(trace);
         return StatusCode::TOO_MANY_REQUESTS.into_response();
     }
     (
@@ -458,6 +529,12 @@ async fn health(State(s): State<Arc<Native>>) -> Response {
             let receipt = s.render_receipts.lock().unwrap().latest.clone();
             Json(serde_json::json!({"v":2,"appVersion":s.runtime.app_version,"projection":p,"renderFps":fps,"renderReceipt":receipt})).into_response()
         }
+        Err(_) => StatusCode::SERVICE_UNAVAILABLE.into_response(),
+    }
+}
+async fn diagnostic_report(State(s): State<Arc<Native>>) -> Response {
+    match s.diagnostic_report().await {
+        Ok(report) => Json(report).into_response(),
         Err(_) => StatusCode::SERVICE_UNAVAILABLE.into_response(),
     }
 }

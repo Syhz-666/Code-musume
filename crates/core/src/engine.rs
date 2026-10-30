@@ -210,6 +210,9 @@ impl Engine {
     pub fn diagnostics(&self) -> Vec<Diagnostic> {
         self.diagnostics.iter().cloned().collect()
     }
+    pub fn latest_diagnostic(&self) -> Option<&Diagnostic> {
+        self.diagnostics.back()
+    }
     fn log(&mut self, agent: Option<Agent>, event: &str, session: Option<&str>, outcome: &str) {
         if self.diagnostics.len() >= 200 {
             self.diagnostics.pop_front();
@@ -217,7 +220,7 @@ impl Engine {
         self.diagnostics.push_back(Diagnostic {
             seq: self.seq,
             agent,
-            event: event.chars().take(128).collect(),
+            event: code_musume_contracts::diagnostics::safe_event(event).into(),
             session_label: session.map(short_hash),
             outcome: outcome.into(),
         });

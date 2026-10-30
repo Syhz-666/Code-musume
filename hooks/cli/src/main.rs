@@ -1,4 +1,5 @@
 use code_musume_contracts::*;
+use code_musume_hook::diagnostics::HookReport;
 use code_musume_hook::{installer, runtime};
 use std::{
     io::{self, Read},
@@ -8,11 +9,28 @@ use std::{
 fn option(a: &[String], k: &str) -> Option<String> {
     a.windows(2).find(|p| p[0] == k).map(|p| p[1].clone())
 }
-fn send(e: &EnvelopeV2, path: PathBuf, budget: Duration) -> Result<(), String> {
-    let r = runtime::read_runtime(&path)?;
-    let bytes = serde_json::to_vec(e).map_err(|e| e.to_string())?;
+struct RelayFailure {
+    stage: &'static str,
+    code: &'static str,
+    status: Option<u16>,
+}
+fn relay(e: &EnvelopeV2, path: PathBuf, budget: Duration) -> Result<u16, RelayFailure> {
+    let r = runtime::read_runtime(&path).map_err(|_| RelayFailure {
+        stage: "runtime",
+        code: "runtime-unavailable",
+        status: None,
+    })?;
+    let bytes = serde_json::to_vec(e).map_err(|_| RelayFailure {
+        stage: "serialize",
+        code: "serialization-failed",
+        status: None,
+    })?;
     if bytes.len() > MAX_ENVELOPE_BYTES {
-        return Err("信封过大".into());
+        return Err(RelayFailure {
+            stage: "serialize",
+            code: "envelope-too-large",
+            status: None,
+        });
     }
     let client: ureq::Agent = ureq::Agent::config_builder()
         .timeout_global(Some(budget))
@@ -20,14 +38,31 @@ fn send(e: &EnvelopeV2, path: PathBuf, budget: Duration) -> Result<(), String> {
         .proxy(None)
         .build()
         .into();
-    client
+    let response = client
         .post(format!("http://127.0.0.1:{}/v2/event", r.port))
         .header("Authorization", format!("Bearer {}", r.token))
         .header("Content-Type", "application/json")
         .header("Connection", "close")
         .send(bytes.as_slice())
-        .map_err(|_| "桌宠接收失败".to_string())?;
-    Ok(())
+        .map_err(|error| {
+            let (code, status) = match error {
+                ureq::Error::StatusCode(status) => ("http-rejected", Some(status)),
+                ureq::Error::Timeout(_) => ("http-timeout", None),
+                ureq::Error::Io(_) | ureq::Error::ConnectionFailed => ("connection-failed", None),
+                _ => ("http-error", None),
+            };
+            RelayFailure {
+                stage: "http",
+                code,
+                status,
+            }
+        })?;
+    Ok(response.status().as_u16())
+}
+fn send(e: &EnvelopeV2, path: PathBuf, budget: Duration) -> Result<(), String> {
+    relay(e, path, budget)
+        .map(|_| ())
+        .map_err(|e| format!("桌宠接收失败: {}", e.code))
 }
 fn hook(a: &[String]) {
     std::panic::set_hook(Box::new(|_| {}));
@@ -35,6 +70,7 @@ fn hook(a: &[String]) {
         .and_then(|s| s.parse::<u64>().ok())
         .unwrap_or(300)
         .clamp(1, 300);
+    let start = Instant::now();
     if std::thread::Builder::new()
         .spawn(move || {
             std::thread::sleep(Duration::from_millis(budget));
@@ -44,25 +80,27 @@ fn hook(a: &[String]) {
     {
         std::process::exit(0);
     }
-    let _ = std::panic::catch_unwind(|| {
-        let start = Instant::now();
-        let agent = Agent::parse(&option(a, "--agent").unwrap_or_default())?;
-        let event = option(a, "--event")?;
+    let id = uuid::Uuid::new_v4().to_string();
+    let agent = Agent::parse(&option(a, "--agent").unwrap_or_default());
+    let event = option(a, "--event");
+    let mut report = HookReport::new(&id, agent, event.as_deref().unwrap_or(""), budget);
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let agent = agent?;
+        let event = event?;
+        report.stage("stdin-read", start);
         let mut bytes = Vec::new();
         io::stdin()
             .take((MAX_INPUT_BYTES + 1) as u64)
             .read_to_end(&mut bytes)
             .ok()?;
+        report.input = Some(diagnostics::InputDiagnostics::inspect(&bytes));
+        report.stage("input-inspected", start);
         let parse_error = if bytes.len() > MAX_INPUT_BYTES {
             bytes.truncate(MAX_INPUT_BYTES);
             Some(ParseError {
                 kind: "size".into(),
             })
-        } else if std::str::from_utf8(&bytes)
-            .ok()
-            .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
-            .is_none()
-        {
+        } else if !report.input.as_ref()?.json_valid {
             Some(ParseError {
                 kind: "json".into(),
             })
@@ -75,7 +113,7 @@ fn hook(a: &[String]) {
         }
         let e = EnvelopeV2 {
             v: 2,
-            id: uuid::Uuid::new_v4().to_string(),
+            id,
             agent,
             event,
             ts: SystemTime::now()
@@ -96,10 +134,30 @@ fn hook(a: &[String]) {
             });
         let remaining = Duration::from_millis(budget).saturating_sub(start.elapsed());
         if !remaining.is_zero() {
-            let _ = send(&e, path, remaining);
+            report.stage("relay-start", start);
+            match relay(&e, path, remaining) {
+                Ok(status) => {
+                    report.outcome = "http-delivered";
+                    report.http_status = Some(status);
+                    report.stage("http-complete", start);
+                }
+                Err(error) => {
+                    report.outcome = error.code;
+                    report.http_status = error.status;
+                    report.stage(error.stage, start);
+                }
+            }
+        } else {
+            report.outcome = "budget-exhausted-before-send";
         }
         Some(())
-    });
+    }));
+    if result.is_err() {
+        report.outcome = "panic-caught";
+    }
+    if let Some(path) = option(a, "--diagnostic-file") {
+        report.save(&PathBuf::from(path), start);
+    }
     std::process::exit(0);
 }
 fn administrative(a: &[String]) -> Result<(), String> {
