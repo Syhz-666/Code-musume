@@ -21,11 +21,18 @@ const cc = "claude-code",
   cx = "codex";
 describe("Actual desktop event chain and settings", () => {
   let initialConfig;
+  let coldStartReady = false;
   before(async () => {
     await browser.setTimeout({ script: 2000 });
     await selectWindow("pet");
+    const environment = await browser.execute(() => ({
+      systemReducedMotion: matchMedia("(prefers-reduced-motion: reduce)").matches,
+      dpr: devicePixelRatio,
+      userAgent: navigator.userAgent,
+    }));
+    console.log(`[environment] ${JSON.stringify(environment)}`);
     assert.equal(
-      await browser.execute(() => matchMedia("(prefers-reduced-motion: reduce)").matches),
+      environment.systemReducedMotion,
       false,
       "Animation suite requires an explicit no-preference test environment",
     );
@@ -714,6 +721,7 @@ describe("Actual desktop event chain and settings", () => {
     await browser.waitUntil(async () =>
       (await (await browser.$("body")).getText()).includes("PermissionRequest"),
     );
+    coldStartReady = true;
   });
   after(() => {
     const pending = visuals.filter((v) => v.status === "pending-review");
@@ -723,11 +731,14 @@ describe("Actual desktop event chain and settings", () => {
       JSON.stringify(
         {
           synthetic: true,
-          visual: visuals.some((v) => v.status === "failed")
-            ? "failed"
-            : pending.length
-              ? "pending-human-review"
-              : "passed",
+          coldStartReady,
+          visual: !visuals.length
+            ? "not-run"
+            : visuals.some((v) => v.status === "failed")
+              ? "failed"
+              : pending.length
+                ? "pending-human-review"
+                : "passed",
           pendingBaselines: pending.map((p) => p.name),
           manual: ["tray", "native-file-picker", "focus", "click-through"],
           realAgents: "not-exercised-by-this-suite",

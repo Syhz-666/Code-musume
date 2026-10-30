@@ -3,7 +3,7 @@ import net from "node:net";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { saveUiFailure } from "./diagnostics.mjs";
-import { browserArguments, systemMotion } from "./environment.mjs";
+import { systemMotion } from "./environment.mjs";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
 const runDir = process.env.CODE_MUSUME_UI_RUN_DIR;
@@ -41,8 +41,6 @@ export const config = {
         env: {
           CODE_MUSUME_DATA_DIR: join(runDir, "runtime"),
           CODE_MUSUME_CONFIG_DIR: join(runDir, "config"),
-          WEBVIEW2_USER_DATA_FOLDER: join(runDir, "webview"),
-          WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: browserArguments,
         },
       },
     ],

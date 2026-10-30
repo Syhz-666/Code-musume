@@ -1,5 +1,7 @@
 mod animation_preview;
 mod characters;
+#[cfg(feature = "e2e")]
+mod e2e_environment;
 mod pipeline_diagnostics;
 mod platform;
 mod render_receipts;
@@ -48,12 +50,14 @@ fn open_settings(app: &AppHandle) -> Result<(), String> {
         w.show().map_err(|e| e.to_string())?;
         w.set_focus().map_err(|e| e.to_string())?;
     } else {
-        WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("settings.html".into()))
-            .title("代码娘 · 设置")
-            .inner_size(850.0, 760.0)
-            .min_inner_size(640.0, 500.0)
-            .build()
-            .map_err(|e| e.to_string())?;
+        let builder =
+            WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("settings.html".into()))
+                .title("代码娘 · 设置")
+                .inner_size(850.0, 760.0)
+                .min_inner_size(640.0, 500.0);
+        #[cfg(feature = "e2e")]
+        let builder = e2e_environment::configure_window(builder, app)?;
+        builder.build().map_err(|e| e.to_string())?;
     }
     Ok(())
 }
@@ -437,6 +441,10 @@ pub fn run() {
         return;
     }
     let builder = tauri::Builder::default();
+    let context = tauri::generate_context!();
+    #[cfg(feature = "e2e")]
+    let context =
+        e2e_environment::configure_context(context).expect("configure isolated test WebViews");
     #[cfg(feature = "e2e")]
     let builder = builder
         .plugin(tauri_plugin_wdio::init())
@@ -529,7 +537,7 @@ pub fn run() {
             #[cfg(feature = "e2e")]
             e2e_exit
         ])
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("build code-musume");
     app.run(|app, event| {
         if matches!(event, tauri::RunEvent::Exit) {

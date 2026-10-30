@@ -75,6 +75,12 @@ try {
         join(root, ".test-artifacts", `ui-${new Date().toISOString().replaceAll(/[:.]/g, "-")}`),
     );
     mkdirSync(join(runDir, "config"), { recursive: true });
+    // A reused run directory must not reuse readiness from an earlier suite.
+    writeFileSync(
+      join(runDir, "acceptance.json"),
+      JSON.stringify({ synthetic: true, coldStartReady: false, visual: "not-run" }),
+    );
+    writeFileSync(join(runDir, "functional-results.json"), JSON.stringify({ cases: [] }));
     if (!existsSync(join(runDir, "config/config.json")))
       writeFileSync(
         join(runDir, "config/config.json"),
@@ -127,9 +133,32 @@ try {
     } catch (error) {
       uiFailure = error;
     }
-    if (env.CODE_MUSUME_UI_SYSTEM_MOTION !== "reduce")
-      run(process.execPath, ["tools/desktop-cold-start.mjs"], env);
+    let coldFailure;
+    if (env.CODE_MUSUME_UI_SYSTEM_MOTION !== "reduce") {
+      const acceptance = JSON.parse(readFileSync(join(runDir, "acceptance.json"), "utf8"));
+      const functional = JSON.parse(readFileSync(join(runDir, "functional-results.json"), "utf8"));
+      if (
+        acceptance.coldStartReady &&
+        functional.cases.length &&
+        functional.cases.every((c) => c.passed)
+      ) {
+        try {
+          run(process.execPath, ["tools/desktop-cold-start.mjs"], env);
+        } catch (error) {
+          coldFailure = error;
+        }
+      } else {
+        const reason = "Main UI suite did not prepare restart settings and character fixtures";
+        writeFileSync(
+          join(runDir, "cold-start-results.json"),
+          JSON.stringify([{ status: "skipped", passed: false, reason }], null, 2),
+        );
+        console.error(`[cold-start] skipped: ${reason}`);
+        coldFailure = new Error(reason);
+      }
+    }
     if (uiFailure) throw uiFailure;
+    if (coldFailure) throw coldFailure;
   }
   if (!["replay", "ui", "verify"].includes(action))
     throw new Error(

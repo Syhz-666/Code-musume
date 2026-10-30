@@ -28,6 +28,7 @@ jobs:
         if: failure()
         with:
           name: smoke-failure-evidence
+          include-hidden-files: true
           path: |
             .test-artifacts/smoke-*/failure-projection.json
             .test-artifacts/smoke-*/failure-diagnostics.json
@@ -48,6 +49,16 @@ jobs:
             tests/desktop/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
       - run: pnpm --dir tests/desktop install --frozen-lockfile
+      - name: Record desktop runner environment
+        shell: pwsh
+        run: |
+          $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+          $principal = [Security.Principal.WindowsPrincipal]::new($identity)
+          [pscustomobject]@{
+            runnerOS = $env:RUNNER_OS
+            imageOS = $env:ImageOS
+            elevated = $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+          } | ConvertTo-Json -Compress
       - run: pnpm test:ui
       - name: System reduced-motion acceptance
         run: pnpm test:ui --skip-build --system-reduced-motion
@@ -55,6 +66,8 @@ jobs:
         if: always()
         with:
           name: desktop-ui-evidence
+          include-hidden-files: true
+          if-no-files-found: error
           path: |
             .test-artifacts/ui-*/functional-results.json
             .test-artifacts/ui-*/visual-results.json
