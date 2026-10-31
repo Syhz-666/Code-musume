@@ -147,7 +147,11 @@ fn target(o: &Options) -> Result<PathBuf, String> {
     if p.exists() {
         let text = fs::read_to_string(&p).map_err(|e| e.to_string())?;
         let v: Value = toml_edit::de::from_str(&text).map_err(|_| "Codex TOML 损坏，拒绝写入")?;
-        if v.get("hooks").is_some() {
+        // Codex 也把信任/停用记录写在 `[hooks.state]` 下；只有事件数组才算内联接线。
+        if v.get("hooks")
+            .and_then(Value::as_object)
+            .is_some_and(|h| h.values().any(|v| v.is_array()))
+        {
             return Ok(p);
         }
     }
