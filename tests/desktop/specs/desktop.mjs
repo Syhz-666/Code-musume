@@ -437,6 +437,80 @@ describe("Actual desktop event chain and settings", () => {
       await pet({ state: "idle", visualReady: true });
     }
   });
+  it("loops the waiting gesture and switches to the static reminder in either renderer", async () => {
+    const view = () => browser.execute(() => ({ ...document.querySelector("#app").dataset }));
+    for (const renderer of ["pixi", "dom"]) {
+      await selectWindow("settings");
+      const config = { ...initialConfig, renderer, reducedMotion: false };
+      await nativeInvoke("set_config", { config });
+      await nativeInvoke("set_animation_preview_enabled", { enabled: true });
+      await nativeInvoke("set_animation_preview_state", { state: null });
+      await pet({ renderer, state: "idle", animationMode: "real", visualReady: true });
+      await browser.execute(() => {
+        const host = document.querySelector("#app");
+        delete host.dataset.waitingWrapped;
+        let previous = -1;
+        const onFrame = ({ detail }) => {
+          if (detail.segment !== "waiting-permission") return;
+          if (detail.frame < previous) {
+            host.dataset.waitingWrapped = "true";
+            window.removeEventListener("code-musume:e2e-frame", onFrame);
+          }
+          previous = detail.frame;
+        };
+        window.addEventListener("code-musume:e2e-frame", onFrame);
+      });
+      assertEntryStartsAtBeginning(
+        await observePreviewEntry("waiting-permission", "waiting-permission-enter"),
+      );
+      await browser.waitUntil(
+        async () => {
+          const data = await view();
+          return data.waitingWrapped === "true" && data.atlas === "attention.png";
+        },
+        { timeout: 6500 },
+      );
+      writeFileSync(
+        join(runDir, `attention-${renderer}-waiting-loop.png`),
+        Buffer.from(await browser.takeScreenshot(), "base64"),
+      );
+
+      await nativeInvoke("set_animation_preview_state", { state: "notification" });
+      await browser.waitUntil(async () => {
+        const data = await view();
+        return (
+          data.segment === "notification" &&
+          data.atlas === "spritesheet.png" &&
+          data.frame === "0" &&
+          data.animationRunning === "false" &&
+          data.visualReady === "true"
+        );
+      });
+      const rest = Buffer.from(await browser.takeScreenshot(), "base64");
+      await browser.pause(500);
+      assert.deepEqual(Buffer.from(await browser.takeScreenshot(), "base64"), rest);
+
+      await selectWindow("settings");
+      await nativeInvoke("set_config", {
+        config: { ...config, reducedMotion: true, manualAnimationEnabled: true },
+      });
+      await nativeInvoke("set_animation_preview_state", { state: "waiting-permission" });
+      await selectWindow("pet");
+      await browser.waitUntil(async () => {
+        const data = await view();
+        return (
+          data.segment === "waiting-permission" &&
+          data.atlas === "attention.png" &&
+          data.frame === "0" &&
+          data.animationRunning === "false" &&
+          data.visualReady === "true"
+        );
+      });
+      const raised = Buffer.from(await browser.takeScreenshot(), "base64");
+      assert.notDeepEqual(raised, rest, "Reduced motion should show the waiting pose");
+      writeFileSync(join(runDir, `attention-${renderer}-waiting-poster.png`), raised);
+    }
+  });
   it("keeps waiting isolated between sources and restores the other agent after done", async () => {
     await hook(cc, "PreToolUse", { tool_use_id: "a" });
     await hook(cx, "PreToolUse", { tool_use_id: "b" });

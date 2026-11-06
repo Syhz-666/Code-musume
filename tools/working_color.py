@@ -31,9 +31,10 @@ def recover_green(rgb, palette):
     """
     rgb = np.asarray(rgb, dtype=np.float32)
     palette = np.asarray(palette, dtype=np.float32)
-    shade_coverage = ((rgb[..., 0] * palette[0] + rgb[..., 2] * palette[2]) /
-                      (palette[0] ** 2 + palette[2] ** 2))
-    green_residual = rgb[..., 1] - shade_coverage * palette[1]
+    red, green, blue = np.moveaxis(palette, -1, 0)
+    shade_coverage = ((rgb[..., 0] * red + rgb[..., 2] * blue) /
+                      np.maximum(red ** 2 + blue ** 2, 1))
+    green_residual = rgb[..., 1] - shade_coverage * green
     spill = np.clip(green_residual / 255, 0, .85)
     shade = shade_coverage / np.maximum(1 - spill, .15)
     recovered = np.clip(shade[..., None] * palette, 0, 255)

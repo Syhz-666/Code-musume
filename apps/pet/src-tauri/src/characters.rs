@@ -226,6 +226,7 @@ pub fn asset_page(id: &str, form: &str, image: Option<&str>) -> Result<String, S
             "spritesheet.png" => include_bytes!("../../assets/builtin/spritesheet.png"),
             "thinking.png" => include_bytes!("../../assets/builtin/thinking.png"),
             "working.png" => include_bytes!("../../assets/builtin/working.png"),
+            "attention.png" => include_bytes!("../../assets/builtin/attention.png"),
             _ => return Err("找不到角色图集".into()),
         };
         return Ok(format!("data:image/png;base64,{}", STANDARD.encode(bytes)));
@@ -410,6 +411,9 @@ mod tests {
         let working_bytes = include_bytes!("../../assets/builtin/working.png");
         let working = decode(working_bytes).unwrap().to_rgba8();
         assert_eq!(working.dimensions(), (3072, 2080));
+        let attention_bytes = include_bytes!("../../assets/builtin/attention.png");
+        let attention = decode(attention_bytes).unwrap().to_rgba8();
+        assert_eq!(attention.dimensions(), (3072, 2080));
         let states = [
             "idle",
             "thinking",
@@ -421,7 +425,7 @@ mod tests {
             "sleeping",
         ];
         for form in &manifest.forms {
-            assert_eq!(form.clips.len(), states.len() + 4);
+            assert_eq!(form.clips.len(), states.len() + 6);
             for (index, state) in states.iter().enumerate() {
                 let clip = &form.clips[*state];
                 if *state == "thinking" {
@@ -436,6 +440,13 @@ mod tests {
                     assert_eq!(clip.row * form.columns + clip.column, 36);
                     continue;
                 }
+                if *state == "waiting-permission" {
+                    assert_eq!(clip.image.as_deref(), Some("attention.png"));
+                    assert_eq!(clip.frames, 85);
+                    assert_eq!(clip.row * form.columns + clip.column, 37);
+                    assert!(clip.looping);
+                    continue;
+                }
                 let slot = if index == 0 { 0 } else { 242 + index as u32 };
                 assert_eq!(clip.row * form.columns + clip.column, slot);
                 assert_eq!(clip.frames, if index == 0 { 243 } else { 1 });
@@ -446,6 +457,13 @@ mod tests {
             assert_eq!(form.clips["thinking-exit"].frames, 30);
             assert_eq!(form.clips["working-enter"].frames, 36);
             assert_eq!(form.clips["working-exit"].frames, 30);
+            assert_eq!(form.clips["waiting-permission-enter"].frames, 37);
+            assert_eq!(form.clips["waiting-permission-exit"].frames, 24);
+            assert!(form.clips["notification"].image.is_none());
+            assert_eq!(
+                asset_page("builtin", &form.id, Some("attention.png")).unwrap(),
+                format!("data:image/png;base64,{}", STANDARD.encode(attention_bytes))
+            );
             assert_eq!(
                 asset_page("builtin", &form.id, Some("working.png")).unwrap(),
                 format!("data:image/png;base64,{}", STANDARD.encode(working_bytes))
@@ -459,7 +477,12 @@ mod tests {
                 format!("data:image/png;base64,{}", STANDARD.encode(bytes))
             );
         }
-        for (page, count) in [(&image, 250), (&thinking, 210), (&working, 154)] {
+        for (page, count) in [
+            (&image, 250),
+            (&thinking, 210),
+            (&working, 154),
+            (&attention, 146),
+        ] {
             for slot in 0..count {
                 let mut last_solid_y = None;
                 for y in 0..208 {
@@ -494,6 +517,17 @@ mod tests {
         assert_eq!(cell(&image, 0), cell(&working, 0));
         assert_eq!(cell(&image, 0), cell(&working, 153));
         assert_eq!(cell(&working, 36), cell(&working, 123));
+        for slot in [0, 145] {
+            assert_eq!(cell(&image, 0), cell(&attention, slot));
+        }
+        for slot in [36, 121, 122] {
+            assert_eq!(cell(&attention, 37), cell(&attention, slot));
+        }
+        for slot in 146..160 {
+            assert!(cell(&attention, slot)
+                .pixels()
+                .all(|pixel| pixel.0 == [0; 4]));
+        }
         assert!(asset("builtin", "missing-form").is_err());
         assert!(asset_page("builtin", "default", Some("../thinking.png")).is_err());
         assert!(asset_page("builtin", "default", Some("missing.png")).is_err());

@@ -11,7 +11,7 @@ describe("bundled homewear character", () => {
     expect(builtinSpriteUrl).toContain("spritesheet.png");
   });
 
-  it("keeps resolution and all states with separate thinking and working atlases", () => {
+  it("keeps the shared resolution and non-overlapping clips for all states", () => {
     for (const form of builtinManifest.forms) {
       expect(Object.keys(form.clips).sort()).toEqual(
         [
@@ -20,6 +20,8 @@ describe("bundled homewear character", () => {
           "thinking-exit",
           "working-enter",
           "working-exit",
+          "waiting-permission-enter",
+          "waiting-permission-exit",
         ].sort(),
       );
       expect(form.cellWidth).toBe(192);
@@ -44,18 +46,35 @@ describe("bundled homewear character", () => {
       expect(form.clips["working-enter"]).toMatchObject({ frames: 36, fps: 48, looping: false });
       expect(form.clips["working-exit"]).toMatchObject({ frames: 30, fps: 60, looping: false });
       expect(builtinAssetUrl("working.png")).toContain("working.png");
+      expect(form.clips["waiting-permission"]).toMatchObject({
+        image: "attention.png",
+        frames: 85,
+        fps: 24,
+        looping: true,
+      });
+      expect(form.clips["waiting-permission-enter"]).toMatchObject({ frames: 37, looping: false });
+      expect(form.clips["waiting-permission-exit"]).toMatchObject({ frames: 24, looping: false });
+      expect(form.clips.notification).toEqual({
+        row: 15,
+        column: 6,
+        frames: 1,
+        fps: 1,
+        looping: false,
+      });
+      expect(builtinAssetUrl("attention.png")).toContain("attention.png");
       expect(() => builtinAssetUrl("missing.png")).toThrow();
       const occupied = new Set<string>();
       for (const [state, clip] of Object.entries(form.clips)) {
-        if (!state.startsWith("thinking") && !state.startsWith("working") && state !== "idle")
+        if (["notification", "done", "error", "sleeping"].includes(state)) {
           expect(clip.frames).toBe(1);
+        }
         for (let i = 0; i < clip.frames; i++) {
           const slot = `${clip.image ?? form.image}:${clip.row * form.columns + clip.column + i}`;
           expect(occupied.has(slot)).toBe(false);
           occupied.add(slot);
         }
       }
-      expect(occupied.size).toBe(612);
+      expect(occupied.size).toBe(757);
     }
   });
 });

@@ -39,11 +39,12 @@
           "looping": true
         },
         "waiting-permission": {
-          "row": 15,
-          "frames": 1,
-          "fps": 1,
-          "looping": true,
-          "column": 5
+          "image": "attention.png",
+          "row": 2,
+          "column": 5,
+          "frames": 85,
+          "fps": 24,
+          "looping": true
         },
         "notification": {
           "row": 15,
@@ -103,6 +104,22 @@
           "column": 12,
           "frames": 30,
           "fps": 60,
+          "looping": false
+        },
+        "waiting-permission-enter": {
+          "image": "attention.png",
+          "row": 0,
+          "column": 0,
+          "frames": 37,
+          "fps": 44,
+          "looping": false
+        },
+        "waiting-permission-exit": {
+          "image": "attention.png",
+          "row": 7,
+          "column": 10,
+          "frames": 24,
+          "fps": 48,
           "looping": false
         }
       },
@@ -139,11 +156,12 @@
           "looping": true
         },
         "waiting-permission": {
-          "row": 15,
-          "frames": 1,
-          "fps": 1,
-          "looping": true,
-          "column": 5
+          "image": "attention.png",
+          "row": 2,
+          "column": 5,
+          "frames": 85,
+          "fps": 24,
+          "looping": true
         },
         "notification": {
           "row": 15,
@@ -203,6 +221,22 @@
           "column": 12,
           "frames": 30,
           "fps": 60,
+          "looping": false
+        },
+        "waiting-permission-enter": {
+          "image": "attention.png",
+          "row": 0,
+          "column": 0,
+          "frames": 37,
+          "fps": 44,
+          "looping": false
+        },
+        "waiting-permission-exit": {
+          "image": "attention.png",
+          "row": 7,
+          "column": 10,
+          "frames": 24,
+          "fps": 48,
           "looping": false
         }
       },
@@ -239,11 +273,12 @@
           "looping": true
         },
         "waiting-permission": {
-          "row": 15,
-          "frames": 1,
-          "fps": 1,
-          "looping": true,
-          "column": 5
+          "image": "attention.png",
+          "row": 2,
+          "column": 5,
+          "frames": 85,
+          "fps": 24,
+          "looping": true
         },
         "notification": {
           "row": 15,
@@ -303,6 +338,22 @@
           "column": 12,
           "frames": 30,
           "fps": 60,
+          "looping": false
+        },
+        "waiting-permission-enter": {
+          "image": "attention.png",
+          "row": 0,
+          "column": 0,
+          "frames": 37,
+          "fps": 44,
+          "looping": false
+        },
+        "waiting-permission-exit": {
+          "image": "attention.png",
+          "row": 7,
+          "column": 10,
+          "frames": 24,
+          "fps": 48,
           "looping": false
         }
       },

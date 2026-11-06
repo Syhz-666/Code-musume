@@ -142,12 +142,12 @@
       }
     },
     "pixi-waiting": {
-      "sha256": "640579052b1397b5ee2f58db09ea0fe17f625d743186d125fb458bf2190e79ff",
+      "sha256": "3ac8bc16f8520f5d3b909a66c49feb644fc18f2675d98db85cae45b185eaef33",
       "reviewer": "Codex",
       "reviewMode": "user-delegated-agent",
-      "authorization": "用户此前明确委托“帮我完成决策”；已检查完整桌宠和设置截图，确认本轮只有测试滚动条样式的预期变化。",
-      "reviewedAt": "2026-10-30T03:55:34.324Z",
-      "sourceRun": "ui-2026-10-29T15-37-18-967Z",
+      "authorization": "用户要求直接完成两项动画替换，沿用既有截图审阅委托。已检查双渲染模式的等待循环、提醒与减少动画定姿。",
+      "reviewedAt": "2026-11-06T14:50:41.833Z",
+      "sourceRun": "ui-20261106-attention-review",
       "environment": {
         "dpr": 1,
         "font": "\"Code Musume Test\", sans-serif",
@@ -302,12 +302,12 @@
       }
     },
     "dom-waiting": {
-      "sha256": "19d97f62056ff256de213751a91e7504a829ef76d04c15651b73aa4826db1fc9",
+      "sha256": "c93abbb26f3efc86b6f134b714d7315cac45b066374668472bd927ea6f347174",
       "reviewer": "Codex",
       "reviewMode": "user-delegated-agent",
-      "authorization": "用户此前明确委托“帮我完成决策”；已检查完整桌宠和设置截图，确认本轮只有测试滚动条样式的预期变化。",
-      "reviewedAt": "2026-10-30T03:55:34.336Z",
-      "sourceRun": "ui-2026-10-29T15-37-18-967Z",
+      "authorization": "用户要求直接完成两项动画替换，沿用既有截图审阅委托。已检查双渲染模式的等待循环、提醒与减少动画定姿。",
+      "reviewedAt": "2026-11-06T14:50:41.833Z",
+      "sourceRun": "ui-20261106-attention-review",
       "environment": {
         "dpr": 1,
         "font": "\"Code Musume Test\", sans-serif",
