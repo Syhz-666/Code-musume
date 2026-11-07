@@ -241,6 +241,7 @@ export async function manualPet(state, realState, { prepare = true } = {}) {
   assert.equal(await (await browser.$(".agent-label")).getText(), "手动预览");
 }
 export async function choose(selector, value) {
+  await (await browser.$(selector)).waitForEnabled();
   await browser.execute(
     (selector, value) => {
       const control = document.querySelector(selector);
@@ -252,7 +253,25 @@ export async function choose(selector, value) {
     selector,
     value,
   );
-  assert.equal(await (await browser.$(selector)).getValue(), value);
+  // Controlled selects can briefly restore the old value while native IPC is pending.
+  let lastValue;
+  await browser
+    .waitUntil(
+      async () => {
+        const current = await browser.execute((selector) => {
+          const control = document.querySelector(selector);
+          if (control?.tagName !== "SELECT") return null;
+          return { value: control.value, enabled: !control.matches(":disabled") };
+        }, selector);
+        lastValue = current?.value;
+        return current?.enabled === true && lastValue === value;
+      },
+      { timeoutMsg: `Select ${selector} did not settle to ${JSON.stringify(value)}` },
+    )
+    .catch((error) => {
+      error.message += `; last value: ${JSON.stringify(lastValue) ?? "unavailable"}`;
+      throw error;
+    });
 }
 export async function screenshot(name) {
   await browser.execute(() => {
