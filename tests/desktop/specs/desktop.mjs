@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { PNG } from "pngjs";
-import { assertEntryStartsAtBeginning, observePreviewEntry } from "../animation-observation.mjs";
+import { assertEntryTiming, observePreviewEntry } from "../animation-observation.mjs";
 import {
   choose,
   health,
@@ -290,7 +290,7 @@ describe("Actual desktop event chain and settings", () => {
       console.log(
         `[animation-entry] ${JSON.stringify({ renderer, firstFrame: wake.samples[0]?.frame, firstReadyFrame: wake.firstReady?.frame, lateFrame: lateView.frame })}`,
       );
-      assertEntryStartsAtBeginning(wake);
+      assertEntryTiming(wake);
       writeFileSync(
         join(runDir, `thinking-${renderer}-wake.png`),
         Buffer.from(await browser.takeScreenshot(), "base64"),
@@ -460,7 +460,7 @@ describe("Actual desktop event chain and settings", () => {
         };
         window.addEventListener("code-musume:e2e-frame", onFrame);
       });
-      assertEntryStartsAtBeginning(
+      assertEntryTiming(
         await observePreviewEntry("waiting-permission", "waiting-permission-enter"),
       );
       await browser.waitUntil(
@@ -475,7 +475,14 @@ describe("Actual desktop event chain and settings", () => {
         Buffer.from(await browser.takeScreenshot(), "base64"),
       );
 
-      assertEntryStartsAtBeginning(await observePreviewEntry("notification", "notification-enter"));
+      const notification = await observePreviewEntry("notification", "notification-enter", {
+        exitSegment: "waiting-permission-exit",
+      });
+      writeFileSync(
+        join(runDir, `attention-${renderer}-notification-entry.json`),
+        JSON.stringify({ renderer, ...notification }, null, 2),
+      );
+      assertEntryTiming(notification);
       await browser.waitUntil(async () => {
         const data = await view();
         return (
@@ -490,7 +497,7 @@ describe("Actual desktop event chain and settings", () => {
       await browser.pause(500);
       assert.deepEqual(Buffer.from(await browser.takeScreenshot(), "base64"), rest);
 
-      assertEntryStartsAtBeginning(await observePreviewEntry("done", "done-enter"));
+      assertEntryTiming(await observePreviewEntry("done", "done-enter"));
       await browser.waitUntil(async () => {
         const data = await view();
         return (

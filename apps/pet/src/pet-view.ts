@@ -510,15 +510,16 @@ function draw() {
     // Synchronous evidence cannot coalesce multiple draws like a MutationObserver.
     // Both the fields and event are removed from production builds.
     Object.assign(hostNode.dataset, {
-      frameSampledAtMs: String(renderNow),
+      frameSampledAtMs: String(elapsed),
       frameFps: String(clip.fps),
     });
     window.dispatchEvent(
       new CustomEvent("code-musume:e2e-frame", {
         detail: {
           frame: index,
+          frames: clip.frames,
           fps: clip.fps,
-          atMs: renderNow,
+          atMs: elapsed,
           state,
           segment: sample.key,
           phase: sample.phase,

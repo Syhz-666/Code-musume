@@ -76,6 +76,7 @@ jobs:
             .test-artifacts/ui-*/acceptance.json
             .test-artifacts/ui-*/system-motion-results.json
             .test-artifacts/ui-*/thinking-*-wake.json
+            .test-artifacts/ui-*/attention-*-notification-entry.json
             .test-artifacts/ui-*/failure-*.json
             .test-artifacts/ui-*/hook-*.json
             .test-artifacts/ui-*/logs/**
