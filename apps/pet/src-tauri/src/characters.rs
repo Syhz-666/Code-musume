@@ -77,7 +77,13 @@ fn decode(bytes: &[u8]) -> Result<image::DynamicImage, String> {
     reader.limits(limits);
     reader.decode().map_err(|_| "图片损坏或解码资源超限".into())
 }
-fn validate(m: &CharacterManifest, dir: &Path) -> Result<(), String> {
+const IMPORTED_FORM_MAX_PIXELS: u64 = 32 * 1024 * 1024;
+
+fn validate(
+    m: &CharacterManifest,
+    dir: &Path,
+    max_decoded_pixels: Option<u64>,
+) -> Result<(), String> {
     if m.schema_version != 1
         || !valid_id(&m.id)
         || m.forms.is_empty()
@@ -136,7 +142,7 @@ fn validate(m: &CharacterManifest, dir: &Path) -> Result<(), String> {
             let img = decode(&bytes)?;
             let (w, h) = img.dimensions();
             decoded_pixels += u64::from(w) * u64::from(h);
-            if decoded_pixels > 32 * 1024 * 1024 {
+            if max_decoded_pixels.is_some_and(|max| decoded_pixels > max) {
                 return Err("图集总解码尺寸超限".into());
             }
             if w != f.cell_width * f.columns || h % f.cell_height != 0 {
@@ -189,7 +195,7 @@ pub fn load(id: &str) -> Result<CharacterManifest, String> {
     if m.id != id {
         return Err("角色目录与 ID 不一致".into());
     }
-    validate(&m, &dir)?;
+    validate(&m, &dir, Some(IMPORTED_FORM_MAX_PIXELS))?;
     Ok(m)
 }
 pub fn list() -> Vec<CharacterManifest> {
@@ -251,7 +257,7 @@ pub fn import(source: &Path) -> Result<CharacterManifest, String> {
             return Err("角色配置过大".into());
         }
         let mut m: CharacterManifest = serde_json::from_slice(&b).map_err(|_| "角色配置损坏")?;
-        validate(&m, &dir)?;
+        validate(&m, &dir, Some(IMPORTED_FORM_MAX_PIXELS))?;
         m.id = format!("import-{}", uuid::Uuid::new_v4().simple());
         let target = root().join(&m.id);
         fs::create_dir_all(&target).map_err(|e| e.to_string())?;
@@ -401,19 +407,19 @@ mod tests {
     fn builtin_pages_have_aligned_states_and_shared_transition_endpoints() {
         let manifest = builtin();
         let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../assets/builtin");
-        validate(&manifest, &dir).unwrap();
+        validate(&manifest, &dir, None).unwrap();
         let bytes = include_bytes!("../../assets/builtin/spritesheet.png");
         let image = decode(bytes).unwrap().to_rgba8();
-        assert_eq!(image.dimensions(), (3072, 3328));
+        assert_eq!(image.dimensions(), (3072, 3536));
         let thinking_bytes = include_bytes!("../../assets/builtin/thinking.png");
         let thinking = decode(thinking_bytes).unwrap().to_rgba8();
-        assert_eq!(thinking.dimensions(), (3072, 2912));
+        assert_eq!(thinking.dimensions(), (3072, 3328));
         let working_bytes = include_bytes!("../../assets/builtin/working.png");
         let working = decode(working_bytes).unwrap().to_rgba8();
         assert_eq!(working.dimensions(), (3072, 2080));
         let attention_bytes = include_bytes!("../../assets/builtin/attention.png");
         let attention = decode(attention_bytes).unwrap().to_rgba8();
-        assert_eq!(attention.dimensions(), (3072, 2080));
+        assert_eq!(attention.dimensions(), (3072, 2912));
         let states = [
             "idle",
             "thinking",
@@ -425,8 +431,8 @@ mod tests {
             "sleeping",
         ];
         for form in &manifest.forms {
-            assert_eq!(form.clips.len(), states.len() + 6);
-            for (index, state) in states.iter().enumerate() {
+            assert_eq!(form.clips.len(), states.len() + 8);
+            for state in &states {
                 let clip = &form.clips[*state];
                 if *state == "thinking" {
                     assert_eq!(clip.image.as_deref(), Some("thinking.png"));
@@ -447,9 +453,28 @@ mod tests {
                     assert!(clip.looping);
                     continue;
                 }
-                let slot = if index == 0 { 0 } else { 242 + index as u32 };
+                if *state == "notification" {
+                    assert_eq!(clip.image.as_deref(), Some("attention.png"));
+                    assert_eq!(clip.frames, 43);
+                    assert_eq!(clip.row * form.columns + clip.column, 169);
+                    assert!(!clip.looping);
+                    continue;
+                }
+                if *state == "done" {
+                    assert_eq!(clip.image.as_deref(), Some("thinking.png"));
+                    assert_eq!(clip.frames, 36);
+                    assert_eq!(clip.row * form.columns + clip.column, 210);
+                    assert!(!clip.looping);
+                    continue;
+                }
+                let slot = match *state {
+                    "idle" => 0,
+                    "error" => 243,
+                    "sleeping" => 244,
+                    _ => unreachable!(),
+                };
                 assert_eq!(clip.row * form.columns + clip.column, slot);
-                assert_eq!(clip.frames, if index == 0 { 243 } else { 1 });
+                assert_eq!(clip.frames, if *state == "idle" { 243 } else { 1 });
             }
             assert_eq!(form.clips["idle"].fps, 24.0);
             assert!(form.clips["idle"].looping);
@@ -459,7 +484,19 @@ mod tests {
             assert_eq!(form.clips["working-exit"].frames, 30);
             assert_eq!(form.clips["waiting-permission-enter"].frames, 37);
             assert_eq!(form.clips["waiting-permission-exit"].frames, 24);
-            assert!(form.clips["notification"].image.is_none());
+            let notification_enter = &form.clips["notification-enter"];
+            assert_eq!(notification_enter.image.as_deref(), Some("attention.png"));
+            assert_eq!(notification_enter.frames, 23);
+            assert_eq!(
+                notification_enter.row * form.columns + notification_enter.column,
+                146
+            );
+            assert!(!notification_enter.looping);
+            let done_enter = &form.clips["done-enter"];
+            assert!(done_enter.image.is_none());
+            assert_eq!(done_enter.frames, 25);
+            assert_eq!(done_enter.row * form.columns + done_enter.column, 245);
+            assert!(!done_enter.looping);
             assert_eq!(
                 asset_page("builtin", &form.id, Some("attention.png")).unwrap(),
                 format!("data:image/png;base64,{}", STANDARD.encode(attention_bytes))
@@ -478,10 +515,10 @@ mod tests {
             );
         }
         for (page, count) in [
-            (&image, 250),
-            (&thinking, 210),
+            (&image, 270),
+            (&thinking, 246),
             (&working, 154),
-            (&attention, 146),
+            (&attention, 212),
         ] {
             for slot in 0..count {
                 let mut last_solid_y = None;
@@ -514,19 +551,62 @@ mod tests {
         assert_eq!(cell(&image, 0), cell(&thinking, 0));
         assert_eq!(cell(&image, 0), cell(&thinking, 209));
         assert_eq!(cell(&thinking, 60), cell(&thinking, 179));
+        assert_eq!(cell(&image, 0), cell(&image, 245));
+        assert_eq!(cell(&image, 269), cell(&thinking, 210));
+        assert_eq!(cell(&image, 0), cell(&thinking, 245));
+        let lower_body = |page: &image::RgbaImage, slot| {
+            image::imageops::crop_imm(&cell(page, slot), 0, 136, 192, 72).to_image()
+        };
+        let planted = lower_body(&image, 0);
+        for (page, slots) in [(&image, 245..270), (&thinking, 210..246)] {
+            for slot in slots {
+                assert_eq!(lower_body(page, slot), planted);
+            }
+        }
         assert_eq!(cell(&image, 0), cell(&working, 0));
         assert_eq!(cell(&image, 0), cell(&working, 153));
         assert_eq!(cell(&working, 36), cell(&working, 123));
-        for slot in [0, 145] {
+        for slot in [0, 145, 146, 211] {
             assert_eq!(cell(&image, 0), cell(&attention, slot));
         }
         for slot in [36, 121, 122] {
             assert_eq!(cell(&attention, 37), cell(&attention, slot));
         }
-        for slot in 146..160 {
-            assert!(cell(&attention, slot)
-                .pixels()
-                .all(|pixel| pixel.0 == [0; 4]));
+        assert_eq!(cell(&attention, 168), cell(&attention, 169));
+        let row_width = |frame: &image::RgbaImage, y| {
+            let mut opaque = (0..frame.width()).filter(|&x| frame.get_pixel(x, y).0[3] >= 128);
+            let first = opaque.next().expect("width calibration row is empty");
+            opaque.next_back().unwrap_or(first) - first + 1
+        };
+        let neutral = cell(&image, 0);
+        // Head and trouser rows avoid the moving sleeves and hands.
+        for (state, page, slots, rows) in [
+            ("working", &working, 0..154, [45, 150, 157, 169, 178, 181]),
+            (
+                "notification",
+                &attention,
+                146..212,
+                [40, 45, 70, 150, 178, 181],
+            ),
+        ] {
+            for slot in slots {
+                let frame = cell(page, slot);
+                for y in rows {
+                    assert!(
+                        row_width(&frame, y).abs_diff(row_width(&neutral, y)) <= 1,
+                        "{state} slot {slot} changes the neutral width at row {y}"
+                    );
+                }
+            }
+        }
+        for (page, padding) in [
+            (&image, 270..272),
+            (&thinking, 246..256),
+            (&attention, 212..224),
+        ] {
+            for slot in padding {
+                assert!(cell(page, slot).pixels().all(|pixel| pixel.0 == [0; 4]));
+            }
         }
         assert!(asset("builtin", "missing-form").is_err());
         assert!(asset_page("builtin", "default", Some("../thinking.png")).is_err());
@@ -540,21 +620,25 @@ mod tests {
         assert_eq!(clip.column, 0);
         assert!(clip.image.is_none());
         let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../assets/builtin");
-        for (column, frames) in [(16, 1), (0, 257), (0, 1025)] {
+        let manifest = builtin();
+        let form = &manifest.forms[0];
+        let (_, height) = image::image_dimensions(dir.join(&form.image)).unwrap();
+        let capacity = height / form.cell_height * form.columns;
+        for (column, frames) in [(form.columns, 1), (0, capacity + 1), (0, 1025)] {
             let mut manifest = builtin();
             let idle = manifest.forms[0].clips.get_mut("idle").unwrap();
             idle.column = column;
             idle.frames = frames;
-            assert!(validate(&manifest, &dir).is_err());
+            assert!(validate(&manifest, &dir, None).is_err());
         }
         for name in ["../thinking.png", "missing.png"] {
             let mut manifest = builtin();
             manifest.forms[0].clips.get_mut("thinking").unwrap().image = Some(name.into());
-            assert!(validate(&manifest, &dir).is_err());
+            assert!(validate(&manifest, &dir, None).is_err());
         }
         let mut manifest = builtin();
         manifest.forms[0].clips.get_mut("thinking").unwrap().frames = 300;
-        assert!(validate(&manifest, &dir).is_err());
+        assert!(validate(&manifest, &dir, None).is_err());
     }
 
     fn sheet(rows: u32) -> image::DynamicImage {

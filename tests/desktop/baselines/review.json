@@ -122,12 +122,12 @@
       }
     },
     "pixi-working": {
-      "sha256": "d10d134510d9f6ea0d49cbfd989934cb862e26172405ae4f906d09a8fb0e60de",
+      "sha256": "f62efb89d4549e1d29618bb87e0c734debfbfa587bc6b61ee0a07ac3ce726fe0",
       "reviewer": "Codex",
       "reviewMode": "user-delegated-agent",
-      "authorization": "用户此前明确委托“帮我完成决策”；已检查完整桌宠和设置截图，确认本轮只有测试滚动条样式的预期变化。",
-      "reviewedAt": "2026-10-30T03:55:34.323Z",
-      "sourceRun": "ui-2026-10-29T15-37-18-967Z",
+      "authorization": "用户要求“审阅受影响截图后更新视觉基准”。已核对干活中角色的横向比例，审阅两种渲染器和 Codex 恢复工作截图。",
+      "reviewedAt": "2026-11-07T06:58:11.438Z",
+      "sourceRun": "ui-20261107-working-width-review",
       "environment": {
         "dpr": 1,
         "font": "\"Code Musume Test\", sans-serif",
@@ -162,12 +162,12 @@
       }
     },
     "pixi-notification": {
-      "sha256": "eca82d4f56a62ee53eb2cd53e84e76ff6fa03d06783a046ed5fb98ea195acbc0",
+      "sha256": "4d63c0c39a0180feb8cc8e85ac45f5b13b716026c07a5309322c8cf82bed2bb2",
       "reviewer": "Codex",
       "reviewMode": "user-delegated-agent",
-      "authorization": "用户此前明确委托“帮我完成决策”；已检查完整桌宠和设置截图，确认本轮只有测试滚动条样式的预期变化。",
-      "reviewedAt": "2026-10-30T03:55:34.326Z",
-      "sourceRun": "ui-2026-10-29T15-37-18-967Z",
+      "authorization": "用户要求“审阅受影响截图后更新视觉基准”。已核对两种渲染器中保留张嘴笑及两次挥手后的静帧。",
+      "reviewedAt": "2026-11-07T07:48:34.237Z",
+      "sourceRun": "ui-20261107-gesture-recut-review",
       "environment": {
         "dpr": 1,
         "font": "\"Code Musume Test\", sans-serif",
@@ -202,12 +202,12 @@
       }
     },
     "pixi-done": {
-      "sha256": "a6aaf41e199c0abb2a18f7c6941f49bb3c3743d16d14b37fb8419e80b9afc610",
+      "sha256": "2923e7c692144de9d65164ee914db1d56f1fc9beb5605954f67f8fa03bbb3945",
       "reviewer": "Codex",
       "reviewMode": "user-delegated-agent",
-      "authorization": "用户此前明确委托“帮我完成决策”；已检查完整桌宠和设置截图，确认本轮只有测试滚动条样式的预期变化。",
-      "reviewedAt": "2026-10-30T03:55:34.329Z",
-      "sourceRun": "ui-2026-10-29T15-37-18-967Z",
+      "authorization": "用户要求“审阅受影响截图后更新视觉基准”。已核对两种渲染器中保留张嘴笑及两次挥手后的静帧。",
+      "reviewedAt": "2026-11-07T07:48:34.237Z",
+      "sourceRun": "ui-20261107-gesture-recut-review",
       "environment": {
         "dpr": 1,
         "font": "\"Code Musume Test\", sans-serif",
@@ -282,12 +282,12 @@
       }
     },
     "dom-working": {
-      "sha256": "173d2e54b214f8bf6bbbae86235f342bf8d5f0874e2d847e4de1849e72bae1e1",
+      "sha256": "f8276f38f1396a68b4714465485b60e037dfcfae9a3e7202e765c981431786c4",
       "reviewer": "Codex",
       "reviewMode": "user-delegated-agent",
-      "authorization": "用户此前明确委托“帮我完成决策”；已检查完整桌宠和设置截图，确认本轮只有测试滚动条样式的预期变化。",
-      "reviewedAt": "2026-10-30T03:55:34.335Z",
-      "sourceRun": "ui-2026-10-29T15-37-18-967Z",
+      "authorization": "用户要求“审阅受影响截图后更新视觉基准”。已核对干活中角色的横向比例，审阅两种渲染器和 Codex 恢复工作截图。",
+      "reviewedAt": "2026-11-07T06:58:11.438Z",
+      "sourceRun": "ui-20261107-working-width-review",
       "environment": {
         "dpr": 1,
         "font": "\"Code Musume Test\", sans-serif",
@@ -322,12 +322,12 @@
       }
     },
     "dom-notification": {
-      "sha256": "237dfbd887805c6b2e5840aaf63772a4d5f2f6aed91223553c4cc9d118df9669",
+      "sha256": "f703c01214db3b5efa38cdb922af34972d143c6e14e82ee8a7de66c6f5748898",
       "reviewer": "Codex",
       "reviewMode": "user-delegated-agent",
-      "authorization": "用户此前明确委托“帮我完成决策”；已检查完整桌宠和设置截图，确认本轮只有测试滚动条样式的预期变化。",
-      "reviewedAt": "2026-10-30T03:55:34.338Z",
-      "sourceRun": "ui-2026-10-29T15-37-18-967Z",
+      "authorization": "用户要求“审阅受影响截图后更新视觉基准”。已核对两种渲染器中保留张嘴笑及两次挥手后的静帧。",
+      "reviewedAt": "2026-11-07T07:48:34.237Z",
+      "sourceRun": "ui-20261107-gesture-recut-review",
       "environment": {
         "dpr": 1,
         "font": "\"Code Musume Test\", sans-serif",
@@ -362,12 +362,12 @@
       }
     },
     "dom-done": {
-      "sha256": "e3832dac02472094d37e94a424ac657c2cd3b15d64e95a27b158f45518b3574b",
+      "sha256": "290c67c2162e2862b5a64920bcfafdccbf113fcadb9484fbaba67e3fb4fe17e1",
       "reviewer": "Codex",
       "reviewMode": "user-delegated-agent",
-      "authorization": "用户此前明确委托“帮我完成决策”；已检查完整桌宠和设置截图，确认本轮只有测试滚动条样式的预期变化。",
-      "reviewedAt": "2026-10-30T03:55:34.341Z",
-      "sourceRun": "ui-2026-10-29T15-37-18-967Z",
+      "authorization": "用户要求“审阅受影响截图后更新视觉基准”。已核对两种渲染器中保留张嘴笑及两次挥手后的静帧。",
+      "reviewedAt": "2026-11-07T07:48:34.237Z",
+      "sourceRun": "ui-20261107-gesture-recut-review",
       "environment": {
         "dpr": 1,
         "font": "\"Code Musume Test\", sans-serif",
@@ -402,12 +402,12 @@
       }
     },
     "both-restore-codex": {
-      "sha256": "c6c5d0f15713bafb56eed6768a953a0142e6b31d15c641f0f8f9fb9396c483a5",
+      "sha256": "d76e98552b894b58b2d18131ee6b1a5ba221f56fbc759c1bf04527518851c86e",
       "reviewer": "Codex",
       "reviewMode": "user-delegated-agent",
-      "authorization": "用户此前明确委托“帮我完成决策”；已检查完整桌宠和设置截图，确认本轮只有测试滚动条样式的预期变化。",
-      "reviewedAt": "2026-10-30T03:55:34.344Z",
-      "sourceRun": "ui-2026-10-29T15-37-18-967Z",
+      "authorization": "用户要求“审阅受影响截图后更新视觉基准”。已核对干活中角色的横向比例，审阅两种渲染器和 Codex 恢复工作截图。",
+      "reviewedAt": "2026-11-07T06:58:11.438Z",
+      "sourceRun": "ui-20261107-working-width-review",
       "environment": {
         "dpr": 1,
         "font": "\"Code Musume Test\", sans-serif",

@@ -1,4 +1,4 @@
-"""Pack the waiting gesture, held loop, and return onto one atlas page."""
+"""Pack the waiting loop and optional one-shot reminder onto one atlas page."""
 
 import argparse
 import json
@@ -19,7 +19,7 @@ helpers = runpy.run_path(str(Path(__file__).with_name("build-thinking-atlas.py")
 mix, solid, close_loop = (helpers[name] for name in ("mix", "solid", "close_loop"))
 
 
-def load_frames(source, last_frame):
+def load_frames(source, last_frame, width_reference=None):
     report = json.loads((source / "validation.json").read_text(encoding="utf-8"))
     fps = report["frameRate"]
     if fps != 24 or last_frame >= report["frameCount"] or report["greenResiduePixels"] != 0:
@@ -34,6 +34,11 @@ def load_frames(source, last_frame):
     bounds = solid(scaled)
     feet = solid(scaled.crop((0, bounds[3] - 6, size[0], bounds[3])))
     offset = (round(96 - (feet[0] + feet[2]) / 2), 200 - bounds[3])
+    width_scale = 1.0
+    if width_reference is not None:
+        size, offset, width_scale = helpers["calibrate_neutral_width"](
+            first, scaled, offset[1], width_reference
+        )
 
     frames = []
     for index in range(last_frame + 1):
@@ -43,7 +48,7 @@ def load_frames(source, last_frame):
                 raise ValueError(f"Frame {index} uses a different crop")
             cell.alpha_composite(image.convert("RGBA").resize(size, Image.Resampling.LANCZOS), offset)
         frames.append(cell)
-    return frames, {"scale": scale, "size": size, "offset": offset}
+    return frames, {"scale": scale, "size": size, "offset": offset, "widthScale": width_scale}
 
 
 def start_at_neutral(entry, canonical, blend_frames):
@@ -81,6 +86,28 @@ def assemble_waiting(source, canonical):
     return clips, transform
 
 
+def assemble_notification(source, canonical, motion_range):
+    start, raised, cut_from, cut_to, rest = motion_range
+    if not (0 <= start <= raised - 2 and raised < cut_from < cut_to <= rest - 2):
+        raise ValueError("Expected ordered reminder markers for the two-wave cut")
+
+    frames, transform = load_frames(source, rest, width_reference=canonical)
+    # Cut between matching outward poses. Blending these or adjacent moving frames ghosts the fingers.
+    motion = frames[start:cut_from] + frames[cut_to:rest + 1]
+    peak = raised - start
+    # Keep every frame of the edited motion at the source's 24 fps cadence.
+    entry = motion[:peak + 1]
+    start_at_neutral(entry, canonical, 3)
+    lowering = motion[peak:]
+    lowering.reverse()
+    start_at_neutral(lowering, canonical, 3)
+    lowering.reverse()
+
+    assert entry[0].tobytes() == lowering[-1].tobytes() == canonical.tobytes()
+    assert entry[-1].tobytes() == lowering[0].tobytes()
+    return (("notification-enter", entry, 24, False), ("notification", lowering, 24, False)), transform
+
+
 def write_preview(path, canonical, clips):
     # Sample the exact atlas poses at 24 fps, with the same action on two backgrounds.
     rate = 24
@@ -110,15 +137,28 @@ def write_preview(path, canonical, clips):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--waiting-source", type=Path, required=True)
+    parser.add_argument("--notification-source", type=Path)
+    parser.add_argument("--notification-range", type=int, nargs=5,
+                        metavar=("START", "RAISED", "CUT_FROM", "CUT_TO", "REST"))
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--preview", action="store_true")
     parser.add_argument("--install", action="store_true")
     args = parser.parse_args()
+    if bool(args.notification_source) != bool(args.notification_range):
+        parser.error("--notification-source and --notification-range must be provided together")
     manifest = json.loads((BUILTIN / "musume.json").read_text(encoding="utf-8"))
+    if not args.notification_source and any("notification-enter" in form["clips"] for form in manifest["forms"]):
+        parser.error("Include the installed notification animation when rebuilding the attention page")
     with Image.open(BUILTIN / "spritesheet.png") as base:
         canonical = base.convert("RGBA").crop((0, 0, *CELL))
 
     clips, transform = assemble_waiting(args.waiting_source, canonical)
+    notification = ()
+    if args.notification_source:
+        notification, notification_transform = assemble_notification(
+            args.notification_source, canonical, args.notification_range
+        )
+        clips += notification
     frame_count = sum(len(frames) for _, frames, _, _ in clips)
     atlas = Image.new("RGBA", (CELL[0] * COLUMNS, CELL[1] * math.ceil(frame_count / COLUMNS)))
     segments = {}
@@ -143,9 +183,6 @@ def main():
     for page in pages - {ATLAS}:
         with Image.open(BUILTIN / page) as image:
             decoded_pixels += image.width * image.height
-    if decoded_pixels > 32 * 1024 * 1024:
-        raise ValueError("Waiting page exceeds the existing per-form decoded pixel budget")
-
     args.output.mkdir(parents=True, exist_ok=True)
     atlas.save(args.output / ATLAS, optimize=True)
     manifest_text = json.dumps(manifest, ensure_ascii=False, indent=2) + "\n"
@@ -154,9 +191,14 @@ def main():
               "constantTransform": transform,
               "totalDecodedPixels": decoded_pixels, "commonNeutralPixelIdentical": True,
               "heldBoundaryPixelIdentical": True}
+    if notification:
+        report["notification"] = {"source": str(args.notification_source), "range": args.notification_range,
+                                  "constantTransform": notification_transform, "playsOnce": True}
     (args.output / "validation.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     if args.preview:
-        write_preview(args.output / "waiting-preview.mp4", canonical, clips)
+        write_preview(args.output / "waiting-preview.mp4", canonical, clips[:3])
+        if notification:
+            write_preview(args.output / "notification-preview.mp4", canonical, notification)
     if args.install:
         # Install the validated page before updating its manifest references.
         (BUILTIN / ATLAS).write_bytes((args.output / ATLAS).read_bytes())

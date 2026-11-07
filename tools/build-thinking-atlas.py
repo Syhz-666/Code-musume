@@ -8,6 +8,7 @@ import hashlib
 import json
 import shutil
 from pathlib import Path
+from statistics import median
 import numpy as np
 from PIL import Image, ImageDraw
 
@@ -19,10 +20,40 @@ OUTPUT = ART / "runtime-thinking-v1"
 BUILTIN = ROOT / "apps/pet/assets/builtin"
 CELL = (192, 208)
 COLUMNS = 16
+# Rows through the head, torso and trousers in the shared neutral pose.
+NEUTRAL_WIDTH_BANDS = ((30, 55), (61, 80), (105, 122), (143, 171), (175, 193))
 
 
 def solid(image):
     return image.getchannel("A").point(lambda value: 255 if value >= 128 else 0).getbbox()
+
+
+def neutral_widths_and_centers(image, top_offset):
+    alpha = image.getchannel("A").point(lambda value: 255 if value >= 128 else 0)
+    bands = []
+    for top, bottom in NEUTRAL_WIDTH_BANDS:
+        rows = [alpha.crop((0, y, alpha.width, y + 1)).getbbox()
+                for y in range(top - top_offset, bottom - top_offset)]
+        spans = [(box[2] - box[0], (box[0] + box[2]) / 2) for box in rows if box]
+        if not spans:
+            raise ValueError("Neutral pose is missing a width calibration band")
+        bands.append((median(width for width, _ in spans), median(center for _, center in spans)))
+    return bands
+
+
+def calibrate_neutral_width(first, scaled, top_offset, canonical):
+    reference_bands = neutral_widths_and_centers(canonical, 0)
+    source_bands = neutral_widths_and_centers(scaled, top_offset)
+    width_ratio = median(
+        ref[0] / source[0] for ref, source in zip(reference_bands, source_bands, strict=True)
+    )
+    size = (round(scaled.width * width_ratio), scaled.height)
+    resized = first.resize(size, Image.Resampling.LANCZOS)
+    source_bands = neutral_widths_and_centers(resized, top_offset)
+    x = round(median(
+        ref[1] - source[1] for ref, source in zip(reference_bands, source_bands, strict=True)
+    ))
+    return size, (x, top_offset), size[0] / scaled.width
 
 
 def mix(left, right, weight):

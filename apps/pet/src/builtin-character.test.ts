@@ -22,6 +22,8 @@ describe("bundled homewear character", () => {
           "working-exit",
           "waiting-permission-enter",
           "waiting-permission-exit",
+          "notification-enter",
+          "done-enter",
         ].sort(),
       );
       expect(form.cellWidth).toBe(192);
@@ -54,18 +56,42 @@ describe("bundled homewear character", () => {
       });
       expect(form.clips["waiting-permission-enter"]).toMatchObject({ frames: 37, looping: false });
       expect(form.clips["waiting-permission-exit"]).toMatchObject({ frames: 24, looping: false });
+      expect(form.clips["notification-enter"]).toEqual({
+        image: "attention.png",
+        row: 9,
+        column: 2,
+        frames: 23,
+        fps: 24,
+        looping: false,
+      });
       expect(form.clips.notification).toEqual({
+        image: "attention.png",
+        row: 10,
+        column: 9,
+        frames: 43,
+        fps: 24,
+        looping: false,
+      });
+      expect(form.clips["done-enter"]).toEqual({
         row: 15,
-        column: 6,
-        frames: 1,
-        fps: 1,
+        column: 5,
+        frames: 25,
+        fps: 24,
+        looping: false,
+      });
+      expect(form.clips.done).toEqual({
+        image: "thinking.png",
+        row: 13,
+        column: 2,
+        frames: 36,
+        fps: 24,
         looping: false,
       });
       expect(builtinAssetUrl("attention.png")).toContain("attention.png");
       expect(() => builtinAssetUrl("missing.png")).toThrow();
       const occupied = new Set<string>();
       for (const [state, clip] of Object.entries(form.clips)) {
-        if (["notification", "done", "error", "sleeping"].includes(state)) {
+        if (["error", "sleeping"].includes(state)) {
           expect(clip.frames).toBe(1);
         }
         for (let i = 0; i < clip.frames; i++) {
@@ -74,7 +100,7 @@ describe("bundled homewear character", () => {
           occupied.add(slot);
         }
       }
-      expect(occupied.size).toBe(757);
+      expect(occupied.size).toBe(882);
     }
   });
 });

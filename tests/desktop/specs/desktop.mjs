@@ -437,7 +437,7 @@ describe("Actual desktop event chain and settings", () => {
       await pet({ state: "idle", visualReady: true });
     }
   });
-  it("loops the waiting gesture and switches to the static reminder in either renderer", async () => {
+  it("loops waiting and plays each brief acknowledgment once in either renderer", async () => {
     const view = () => browser.execute(() => ({ ...document.querySelector("#app").dataset }));
     for (const renderer of ["pixi", "dom"]) {
       await selectWindow("settings");
@@ -475,19 +475,34 @@ describe("Actual desktop event chain and settings", () => {
         Buffer.from(await browser.takeScreenshot(), "base64"),
       );
 
-      await nativeInvoke("set_animation_preview_state", { state: "notification" });
+      assertEntryStartsAtBeginning(await observePreviewEntry("notification", "notification-enter"));
       await browser.waitUntil(async () => {
         const data = await view();
         return (
           data.segment === "notification" &&
-          data.atlas === "spritesheet.png" &&
-          data.frame === "0" &&
-          data.animationRunning === "false" &&
+          data.atlas === "attention.png" &&
+          data.frame === "42" &&
+          data.frameFps === "24" &&
           data.visualReady === "true"
         );
       });
       const rest = Buffer.from(await browser.takeScreenshot(), "base64");
       await browser.pause(500);
+      assert.deepEqual(Buffer.from(await browser.takeScreenshot(), "base64"), rest);
+
+      assertEntryStartsAtBeginning(await observePreviewEntry("done", "done-enter"));
+      await browser.waitUntil(async () => {
+        const data = await view();
+        return (
+          data.segment === "done" &&
+          data.atlas === "thinking.png" &&
+          data.frame === "35" &&
+          data.frameFps === "24" &&
+          data.visualReady === "true"
+        );
+      });
+      assert.deepEqual(Buffer.from(await browser.takeScreenshot(), "base64"), rest);
+      await browser.pause(350);
       assert.deepEqual(Buffer.from(await browser.takeScreenshot(), "base64"), rest);
 
       await selectWindow("settings");
@@ -509,6 +524,36 @@ describe("Actual desktop event chain and settings", () => {
       const raised = Buffer.from(await browser.takeScreenshot(), "base64");
       assert.notDeepEqual(raised, rest, "Reduced motion should show the waiting pose");
       writeFileSync(join(runDir, `attention-${renderer}-waiting-poster.png`), raised);
+
+      await nativeInvoke("set_animation_preview_state", { state: "notification" });
+      await browser.waitUntil(async () => {
+        const data = await view();
+        return (
+          data.segment === "notification" &&
+          data.frame === "0" &&
+          data.animationRunning === "false" &&
+          data.visualReady === "true"
+        );
+      });
+      const poster = Buffer.from(await browser.takeScreenshot(), "base64");
+      assert.notDeepEqual(poster, rest, "Reduced motion should show the raised reminder pose");
+      await browser.pause(300);
+      assert.deepEqual(Buffer.from(await browser.takeScreenshot(), "base64"), poster);
+
+      await nativeInvoke("set_animation_preview_state", { state: "done" });
+      await browser.waitUntil(async () => {
+        const data = await view();
+        return (
+          data.segment === "done" &&
+          data.frame === "0" &&
+          data.animationRunning === "false" &&
+          data.visualReady === "true"
+        );
+      });
+      const nod = Buffer.from(await browser.takeScreenshot(), "base64");
+      assert.notDeepEqual(nod, rest, "Reduced motion should show the nod pose");
+      await browser.pause(300);
+      assert.deepEqual(Buffer.from(await browser.takeScreenshot(), "base64"), nod);
     }
   });
   it("keeps waiting isolated between sources and restores the other agent after done", async () => {

@@ -16,7 +16,7 @@ from video_runtime import ffmpeg
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "artifacts/design/preprocessed/frames/workbuddy-working-cutout-v4"
-OUTPUT = ROOT / "artifacts/design/preprocessed/frames/runtime-working-v2"
+OUTPUT = ROOT / "artifacts/design/preprocessed/frames/runtime-working-v3"
 BUILTIN = ROOT / "apps/pet/assets/builtin"
 CELL = (192, 208)
 COLUMNS = 16
@@ -44,8 +44,7 @@ def main():
     size = (round(first.width * scale), round(first.height * scale))
     scaled = first.resize(size, Image.Resampling.LANCZOS)
     bounds = solid(scaled)
-    feet = scaled.getchannel("A").crop((0, bounds[3] - 6, size[0], bounds[3])).point(lambda a: 255 if a >= 128 else 0).getbbox()
-    offset = (round(96 - (feet[0] + feet[2]) / 2), 200 - bounds[3])
+    size, offset, width_scale = helpers.calibrate_neutral_width(first, scaled, 200 - bounds[3], canonical)
     frames = []
     for path in paths:
         cell = Image.new("RGBA", CELL)
@@ -84,13 +83,12 @@ def main():
             shutil.copyfile(BUILTIN / name, OUTPUT / name)
             pages[name] = Image.open(BUILTIN / name).convert("RGBA")
     total = sum(image.width * image.height for image in pages.values())
-    assert total <= 32 * 1024 * 1024
     report = {"source": str(SOURCE), "frames": len(packed), "segments": segments,
-              "constantTransform": {"scale": scale, "size": size, "offset": offset},
+              "constantTransform": {"scale": scale, "size": size, "offset": offset, "widthScale": width_scale},
               "commonNeutralPixelIdentical": True, "loopEndpointsPixelIdentical": True,
               "exitMethod": "Reverse and resample the actual generated raising gesture",
               "totalDecodedPixels": total, "pageSizes": {name: list(image.size) for name, image in pages.items()},
-              "existingPagesPreserved": True, "sourceAspectRatioPreserved": True}
+              "existingPagesPreserved": True, "sourceAspectRatioPreserved": width_scale == 1.0}
     (OUTPUT / "validation.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     samples = [("idle / common neutral", canonical), ("entry middle", entry[18]), ("working loop", loop[0]), ("working mid-loop", loop[44]), ("reverse exit", exit_frames[15]), ("idle / exit end", exit_frames[-1])]
     sheet = Image.new("RGB", (960, 432), "#eeeeee")

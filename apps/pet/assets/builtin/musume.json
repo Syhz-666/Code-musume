@@ -47,32 +47,34 @@
           "looping": true
         },
         "notification": {
-          "row": 15,
-          "frames": 1,
-          "fps": 1,
-          "looping": false,
-          "column": 6
+          "image": "attention.png",
+          "row": 10,
+          "column": 9,
+          "frames": 43,
+          "fps": 24,
+          "looping": false
         },
         "done": {
-          "row": 15,
-          "frames": 1,
-          "fps": 1,
+          "row": 13,
+          "column": 2,
+          "frames": 36,
+          "fps": 24,
           "looping": false,
-          "column": 7
+          "image": "thinking.png"
         },
         "error": {
           "row": 15,
+          "column": 3,
           "frames": 1,
           "fps": 1,
-          "looping": true,
-          "column": 8
+          "looping": true
         },
         "sleeping": {
           "row": 15,
+          "column": 4,
           "frames": 1,
           "fps": 1,
-          "looping": true,
-          "column": 9
+          "looping": true
         },
         "thinking-enter": {
           "image": "thinking.png",
@@ -120,6 +122,21 @@
           "column": 10,
           "frames": 24,
           "fps": 48,
+          "looping": false
+        },
+        "notification-enter": {
+          "image": "attention.png",
+          "row": 9,
+          "column": 2,
+          "frames": 23,
+          "fps": 24,
+          "looping": false
+        },
+        "done-enter": {
+          "row": 15,
+          "column": 5,
+          "frames": 25,
+          "fps": 24,
           "looping": false
         }
       },
@@ -164,32 +181,34 @@
           "looping": true
         },
         "notification": {
-          "row": 15,
-          "frames": 1,
-          "fps": 1,
-          "looping": false,
-          "column": 6
+          "image": "attention.png",
+          "row": 10,
+          "column": 9,
+          "frames": 43,
+          "fps": 24,
+          "looping": false
         },
         "done": {
-          "row": 15,
-          "frames": 1,
-          "fps": 1,
+          "row": 13,
+          "column": 2,
+          "frames": 36,
+          "fps": 24,
           "looping": false,
-          "column": 7
+          "image": "thinking.png"
         },
         "error": {
           "row": 15,
+          "column": 3,
           "frames": 1,
           "fps": 1,
-          "looping": true,
-          "column": 8
+          "looping": true
         },
         "sleeping": {
           "row": 15,
+          "column": 4,
           "frames": 1,
           "fps": 1,
-          "looping": true,
-          "column": 9
+          "looping": true
         },
         "thinking-enter": {
           "image": "thinking.png",
@@ -237,6 +256,21 @@
           "column": 10,
           "frames": 24,
           "fps": 48,
+          "looping": false
+        },
+        "notification-enter": {
+          "image": "attention.png",
+          "row": 9,
+          "column": 2,
+          "frames": 23,
+          "fps": 24,
+          "looping": false
+        },
+        "done-enter": {
+          "row": 15,
+          "column": 5,
+          "frames": 25,
+          "fps": 24,
           "looping": false
         }
       },
@@ -281,32 +315,34 @@
           "looping": true
         },
         "notification": {
-          "row": 15,
-          "frames": 1,
-          "fps": 1,
-          "looping": false,
-          "column": 6
+          "image": "attention.png",
+          "row": 10,
+          "column": 9,
+          "frames": 43,
+          "fps": 24,
+          "looping": false
         },
         "done": {
-          "row": 15,
-          "frames": 1,
-          "fps": 1,
+          "row": 13,
+          "column": 2,
+          "frames": 36,
+          "fps": 24,
           "looping": false,
-          "column": 7
+          "image": "thinking.png"
         },
         "error": {
           "row": 15,
+          "column": 3,
           "frames": 1,
           "fps": 1,
-          "looping": true,
-          "column": 8
+          "looping": true
         },
         "sleeping": {
           "row": 15,
+          "column": 4,
           "frames": 1,
           "fps": 1,
-          "looping": true,
-          "column": 9
+          "looping": true
         },
         "thinking-enter": {
           "image": "thinking.png",
@@ -354,6 +390,21 @@
           "column": 10,
           "frames": 24,
           "fps": 48,
+          "looping": false
+        },
+        "notification-enter": {
+          "image": "attention.png",
+          "row": 9,
+          "column": 2,
+          "frames": 23,
+          "fps": 24,
+          "looping": false
+        },
+        "done-enter": {
+          "row": 15,
+          "column": 5,
+          "frames": 25,
+          "fps": 24,
           "looping": false
         }
       },

@@ -30,7 +30,7 @@ def reference_palettes(path):
     return palettes
 
 
-def correct_frame(image, crop, palettes):
+def correct_frame(image, crop, palettes, raised_hand=False):
     original = np.asarray(image.convert("RGBA"))
     rgb = original[:, :, :3].astype(np.float32)
     visible = original[:, :, 3] > 0
@@ -42,6 +42,12 @@ def correct_frame(image, crop, palettes):
         recovered, weight = recover_green(rgb[region], palette)
         corrected[region] = rgb[region] + weight[:, None] * (recovered - rgb[region])
         changed_lower[region] = weight > 0
+
+    if raised_hand:
+        red, green, blue = np.moveaxis(rgb, -1, 0)
+        hand = visible & (x >= 1100) & (y >= 380) & (y < 700) & (red > 120) & (green > blue + 14)
+        recovered, weight = recover_green(rgb[hand], palettes[2])
+        corrected[hand] = rgb[hand] + weight[:, None] * (recovered - rgb[hand])
 
     red, green, blue = np.moveaxis(corrected, -1, 0)
     excess = green - np.maximum(red, blue)
@@ -78,6 +84,7 @@ def main():
     parser.add_argument("--source", type=Path, required=True)
     parser.add_argument("--reference", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--raised-hand", action="store_true", help="Recover skin color on the screen-right wave")
     args = parser.parse_args()
     if args.source.resolve() == args.output.resolve():
         raise ValueError("Preserve the original matte in a separate directory")
@@ -92,7 +99,7 @@ def main():
     for index in range(report["frameCount"]):
         name = f"{index:04d}.png"
         with Image.open(args.source / "frames" / name) as before:
-            after, counts = correct_frame(before, crop, palettes)
+            after, counts = correct_frame(before, crop, palettes, args.raised_hand)
             after.save(args.output / "frames" / name)
             records.append({"frame": index, **counts})
             if index in samples:
@@ -109,7 +116,7 @@ def main():
         "refinedFrom": str(args.source), "colorReference": str(args.reference),
         "referencePalettes": [p.tolist() for p in palettes], "greenResiduePixels": 0,
         "alphaByteIdenticalToInitialMatte": True, "opaqueRgbPreserved": False,
-        "colorCorrectionFrames": records,
+        "colorCorrectionFrames": records, "raisedHandCorrection": args.raised_hand,
     })
     (args.output / "validation.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     print(json.dumps({"frames": len(records), "output": str(args.output), "palettes": report["referencePalettes"]}))
