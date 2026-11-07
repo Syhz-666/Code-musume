@@ -46,11 +46,7 @@ def main():
     returning = source[smile:rest + 1]
     # This gesture is head-only. Keep the original hands and stance.
     for frame in source[start:rest + 1]:
-        for y in range(124, 136):
-            strip = (0, y, CELL[0], y + 1)
-            blended = helpers["mix"](frame.crop(strip), neutral.crop(strip), (y - 124) / 12)
-            frame.paste(blended, (0, y))
-        frame.paste(neutral.crop((0, 136, *CELL)), (0, 136))
+        helpers["lock_neutral_stance"](frame, neutral)
     helpers["start_at_neutral"](entry, neutral, 4)
     returning.reverse()
     helpers["start_at_neutral"](returning, neutral, 4)

@@ -272,14 +272,35 @@ describe("Actual desktop event chain and settings", () => {
           value.displayState === "idle" && value.segment === "idle" && value.visualReady === "true"
         );
       });
-      await nativeInvoke("set_animation_preview_state", { state: "thinking" });
-      await nativeInvoke("set_animation_preview_state", { state: "sleeping" });
+      assertEntryTiming(await observePreviewEntry("sleeping", "sleeping-enter"));
       await browser.waitUntil(async () => {
         const value = await browser.execute(() => ({ ...document.querySelector("#app").dataset }));
-        return value.segment === "sleeping" && value.visualReady === "true";
+        return (
+          value.segment === "sleeping" && value.frameFps === "24" && value.visualReady === "true"
+        );
       });
-      await browser.pause(650);
-      const wake = await observePreviewEntry("thinking", "thinking-enter");
+      const sleepingFrames = await browser.execute(
+        () =>
+          new Promise((resolve) => {
+            const frames = new Set();
+            const onFrame = ({ detail }) => {
+              if (detail.segment === "sleeping") frames.add(detail.frame);
+            };
+            window.addEventListener("code-musume:e2e-frame", onFrame);
+            setTimeout(() => {
+              window.removeEventListener("code-musume:e2e-frame", onFrame);
+              resolve(frames.size);
+            }, 650);
+          }),
+      );
+      assert(sleepingFrames >= 8, "The sleeping loop must advance regularly, not render at 1 FPS");
+      const sleepFrame = () =>
+        browser.execute(() => Number(document.querySelector("#app").dataset.frame));
+      await browser.waitUntil(async () => (await sleepFrame()) >= 78, { timeout: 5500 });
+      await browser.waitUntil(async () => (await sleepFrame()) < 12, { timeout: 1500 });
+      const wake = await observePreviewEntry("thinking", "thinking-enter", {
+        exitSegment: "sleeping-exit",
+      });
       // Deliberately read late: the recorded beginning must survive slow driver replies.
       await browser.pause(450);
       const lateView = await browser.execute(() => ({ ...document.querySelector("#app").dataset }));
@@ -319,6 +340,16 @@ describe("Actual desktop event chain and settings", () => {
       );
       await browser.pause(500);
       assert.deepEqual(Buffer.from(await browser.takeScreenshot(), "base64"), frozen);
+      await nativeInvoke("set_animation_preview_state", { state: "sleeping" });
+      await manualPet("sleeping", "working");
+      await browser.waitUntil(async () => {
+        const value = await browser.execute(() => ({ ...document.querySelector("#app").dataset }));
+        return value.segment === "sleeping" && value.frame === "0" && value.visualReady === "true";
+      });
+      const sleepPoster = Buffer.from(await browser.takeScreenshot(), "base64");
+      assert.notDeepEqual(sleepPoster, frozen);
+      await browser.pause(500);
+      assert.deepEqual(Buffer.from(await browser.takeScreenshot(), "base64"), sleepPoster);
       await nativeInvoke("set_animation_preview_enabled", { enabled: false });
       await nativeInvoke("reset_sessions");
       await nativeInvoke("set_config", { config: { ...config, renderer, reducedMotion: true } });

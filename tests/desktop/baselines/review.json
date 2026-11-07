@@ -222,12 +222,12 @@
       }
     },
     "pixi-sleeping": {
-      "sha256": "e28bb0412596c77578e1d3acf845adb0745c471a0f6fc85f6064c982b255a19f",
+      "sha256": "55000a3caf6faa8b532502ad32f3ede6273a05a1287aaa0c310577028bbe6d98",
       "reviewer": "Codex",
       "reviewMode": "user-delegated-agent",
-      "authorization": "用户此前明确委托“帮我完成决策”；已检查完整桌宠和设置截图，确认本轮只有测试滚动条样式的预期变化。",
-      "reviewedAt": "2026-10-30T03:55:34.330Z",
-      "sourceRun": "ui-2026-10-29T15-37-18-967Z",
+      "authorization": "用户要求“审阅受影响截图后更新视觉基准”。已审阅两种渲染器的闭眼浅眠静帧。",
+      "reviewedAt": "2026-11-07T10:47:17.264Z",
+      "sourceRun": "ui-20261107-sleeping-review",
       "environment": {
         "dpr": 1,
         "font": "\"Code Musume Test\", sans-serif",
@@ -382,12 +382,12 @@
       }
     },
     "dom-sleeping": {
-      "sha256": "98f4bc29d8116e04e96ad8a8916eb5db88a7ab96350da45fba617e3e586bee24",
+      "sha256": "816e86adead20f0e6ee6d1d11d6aa6f42c1c3c068db33ae9722a67c8757a517f",
       "reviewer": "Codex",
       "reviewMode": "user-delegated-agent",
-      "authorization": "用户此前明确委托“帮我完成决策”；已检查完整桌宠和设置截图，确认本轮只有测试滚动条样式的预期变化。",
-      "reviewedAt": "2026-10-30T03:55:34.342Z",
-      "sourceRun": "ui-2026-10-29T15-37-18-967Z",
+      "authorization": "用户要求“审阅受影响截图后更新视觉基准”。已审阅两种渲染器的闭眼浅眠静帧。",
+      "reviewedAt": "2026-11-07T10:47:17.264Z",
+      "sourceRun": "ui-20261107-sleeping-review",
       "environment": {
         "dpr": 1,
         "font": "\"Code Musume Test\", sans-serif",

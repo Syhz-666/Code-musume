@@ -57,6 +57,14 @@ def start_at_neutral(entry, canonical, blend_frames):
         entry[index] = mix(canonical, entry[index], t * t * (3 - 2 * t))
 
 
+def lock_neutral_stance(frame, neutral):
+    for y in range(124, 136):
+        strip = (0, y, CELL[0], y + 1)
+        blended = mix(frame.crop(strip), neutral.crop(strip), (y - 124) / 12)
+        frame.paste(blended, (0, y))
+    frame.paste(neutral.crop((0, 136, *CELL)), (0, 136))
+
+
 def resample(frames, count):
     result = []
     for index in range(count):

@@ -44,8 +44,12 @@ function displayedState() {
 function displayFPS() {
   if (!visible || reduced()) return 1;
   if (playbackMoving || transition.active) return 60;
-  if (displayedState() === "sleeping") return 1;
-  return displayedState() === "idle" || displayedState() === "thinking" ? 24 : 60;
+  const state = displayedState();
+  if (state === "sleeping") {
+    const clip = form?.clips.sleeping;
+    return clip && clip.frames > 1 ? clip.fps : 1;
+  }
+  return state === "idle" || state === "thinking" ? 24 : 60;
 }
 let manifest: CharacterManifest | null = null,
   form: CharacterForm | null = null;

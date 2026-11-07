@@ -24,6 +24,8 @@ describe("bundled homewear character", () => {
           "waiting-permission-exit",
           "notification-enter",
           "done-enter",
+          "sleeping-enter",
+          "sleeping-exit",
         ].sort(),
       );
       expect(form.cellWidth).toBe(192);
@@ -87,11 +89,36 @@ describe("bundled homewear character", () => {
         fps: 24,
         looping: false,
       });
+      expect(form.clips["sleeping-enter"]).toEqual({
+        image: "sleeping.png",
+        row: 0,
+        column: 0,
+        frames: 17,
+        fps: 24,
+        looping: false,
+      });
+      expect(form.clips.sleeping).toEqual({
+        image: "sleeping.png",
+        row: 1,
+        column: 1,
+        frames: 91,
+        fps: 24,
+        looping: true,
+      });
+      expect(form.clips["sleeping-exit"]).toEqual({
+        image: "sleeping.png",
+        row: 6,
+        column: 12,
+        frames: 17,
+        fps: 48,
+        looping: false,
+      });
       expect(builtinAssetUrl("attention.png")).toContain("attention.png");
+      expect(builtinAssetUrl("sleeping.png")).toContain("sleeping.png");
       expect(() => builtinAssetUrl("missing.png")).toThrow();
       const occupied = new Set<string>();
       for (const [state, clip] of Object.entries(form.clips)) {
-        if (["error", "sleeping"].includes(state)) {
+        if (state === "error") {
           expect(clip.frames).toBe(1);
         }
         for (let i = 0; i < clip.frames; i++) {
@@ -100,7 +127,7 @@ describe("bundled homewear character", () => {
           occupied.add(slot);
         }
       }
-      expect(occupied.size).toBe(882);
+      expect(occupied.size).toBe(1006);
     }
   });
 });
