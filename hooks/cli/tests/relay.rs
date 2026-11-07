@@ -150,6 +150,7 @@ fn opt_in_report_explains_bom_and_delivery_without_saving_input_or_token() {
     let t = Sandbox::new();
     let handle = server(&t.path);
     let report = t.path.join("hook-diagnostic.json");
+    let event_id = uuid::Uuid::new_v4().to_string();
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_code-musume-hook"));
     cmd.args([
         "--agent",
@@ -161,12 +162,14 @@ fn opt_in_report_explains_bom_and_delivery_without_saving_input_or_token() {
         "--diagnostic-file",
     ])
     .arg(&report)
+    .args(["--event-id", &event_id])
     .env("CODE_MUSUME_DATA_DIR", &t.path);
     let input =
         "\u{feff}{\"session_id\":\"private-session\",\"prompt\":\"never-save-this-content\"}";
     let out = run(cmd, input);
     assert!(out.status.success() && out.stdout.is_empty() && out.stderr.is_empty());
     let envelope = handle.join().unwrap();
+    assert_eq!(envelope.id, event_id);
     assert!(envelope.parse_error.is_some());
     let bytes = fs::read_to_string(report).unwrap();
     let value: serde_json::Value = serde_json::from_str(&bytes).unwrap();

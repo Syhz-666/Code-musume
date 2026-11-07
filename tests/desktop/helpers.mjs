@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -111,10 +111,33 @@ export async function hook(agent, event, extra = {}, session = "ui-session", tur
     ...extra,
   };
   const sequence = ++hookSequence;
-  const tracePath = join(runDir, `hook-${String(sequence).padStart(3, "0")}.json`);
   const input = JSON.stringify(payload);
+  const eventId = randomUUID();
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const report = await sendHookAttempt({ agent, event, eventId, input, sequence, attempt });
+    if (report?.outcome === "http-delivered" && report.httpStatus === 202) return;
+    const outcome = report?.outcome ?? "report-missing-or-deadline";
+    // A timeout can occur after delivery. Keep the same id so the core deduplicates a replay.
+    if (
+      attempt === 1 &&
+      (!report || outcome === "http-timeout" || outcome === "connection-failed")
+    ) {
+      continue;
+    }
+    throw new Error(
+      `Hook ${sequence} ${agent}/${event} delivery failed: ${outcome} (attempt ${attempt})`,
+    );
+  }
+}
+async function sendHookAttempt({ agent, event, eventId, input, sequence, attempt }) {
+  const suffix = attempt === 1 ? "" : "-retry";
+  const traceId = createHash("sha256").update(eventId).digest("hex").slice(0, 10);
+  const tracePath = join(
+    runDir,
+    `hook-${String(sequence).padStart(3, "0")}-${traceId}${suffix}.json`,
+  );
   const started = performance.now();
-  await new Promise((ok, reject) => {
+  return new Promise((ok, reject) => {
     const child = spawn(
       join(root, "target/debug/code-musume-hook.exe"),
       [
@@ -126,6 +149,8 @@ export async function hook(agent, event, extra = {}, session = "ui-session", tur
         join(runDir, "runtime/runtime.dev.json"),
         "--diagnostic-file",
         tracePath,
+        "--event-id",
+        eventId,
       ],
       { windowsHide: true, stdio: ["pipe", "pipe", "pipe"] },
     );
@@ -137,7 +162,7 @@ export async function hook(agent, event, extra = {}, session = "ui-session", tur
       output += b;
     });
     child.on("error", reject);
-    child.on("exit", (code) => {
+    child.on("close", (code) => {
       try {
         assert.equal(code, 0);
         assert.equal(output, "");
@@ -145,22 +170,23 @@ export async function hook(agent, event, extra = {}, session = "ui-session", tur
         try {
           if (existsSync(tracePath)) report = JSON.parse(readFileSync(tracePath, "utf8"));
         } catch {
-          /* Optional diagnostics must not turn a delivered event into a test failure. */
+          /* A partial report leaves delivery uncertain. */
         }
         console.log(
           `[hook] ${JSON.stringify({
             sequence,
+            attempt,
             agent,
             event,
             exitCode: code,
             elapsedMs: performance.now() - started,
-            traceId: report?.traceId,
+            traceId,
             outcome: report?.outcome ?? "report-missing-or-deadline",
             input: report?.input,
             httpStatus: report?.httpStatus,
           })}`,
         );
-        ok();
+        ok(report);
       } catch (e) {
         reject(e);
       }

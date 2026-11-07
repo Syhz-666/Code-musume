@@ -80,7 +80,14 @@ fn hook(a: &[String]) {
     {
         std::process::exit(0);
     }
-    let id = uuid::Uuid::new_v4().to_string();
+    let diagnostic_file = option(a, "--diagnostic-file");
+    // Diagnostic callers can identify a replay of the same logical event.
+    let id = diagnostic_file
+        .as_ref()
+        .and_then(|_| option(a, "--event-id"))
+        .and_then(|id| uuid::Uuid::parse_str(&id).ok())
+        .unwrap_or_else(uuid::Uuid::new_v4)
+        .to_string();
     let agent = Agent::parse(&option(a, "--agent").unwrap_or_default());
     let event = option(a, "--event");
     let mut report = HookReport::new(&id, agent, event.as_deref().unwrap_or(""), budget);
@@ -155,7 +162,7 @@ fn hook(a: &[String]) {
     if result.is_err() {
         report.outcome = "panic-caught";
     }
-    if let Some(path) = option(a, "--diagnostic-file") {
+    if let Some(path) = diagnostic_file {
         report.save(&PathBuf::from(path), start);
     }
     std::process::exit(0);

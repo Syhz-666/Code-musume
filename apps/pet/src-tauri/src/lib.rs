@@ -11,10 +11,10 @@ use code_musume_hook::{installer, runtime};
 use service::Native;
 use std::{path::PathBuf, sync::Arc};
 use tauri::{
-    ipc::Channel,
+    ipc::JavaScriptChannelId,
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
-    AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
+    AppHandle, Emitter, Manager, State, Webview, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
 };
 
 struct DesktopMenu(Menu<tauri::Wry>);
@@ -136,13 +136,12 @@ fn hook_options(
 }
 #[tauri::command]
 async fn subscribe_projection(
-    window: WebviewWindow,
+    webview: Webview,
     s: State<'_, Arc<Native>>,
-    on_update: Channel<Projection>,
+    on_update: JavaScriptChannelId,
     subscription_id: String,
 ) -> Result<Projection, String> {
-    s.subscribe(format!("{}:{subscription_id}", window.label()), on_update)
-        .await
+    s.subscribe(webview, subscription_id, on_update).await
 }
 #[tauri::command]
 async fn unsubscribe_projection(

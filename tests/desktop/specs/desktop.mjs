@@ -877,6 +877,44 @@ describe("Actual desktop event chain and settings", () => {
     await browser.waitUntil(async () =>
       (await (await browser.$("body")).getText()).includes("PermissionRequest"),
     );
+
+    // Simulate Tauri resending a subscribe command after its first IPC response is lost.
+    const initialRevision = await browser.execute(async () => {
+      const { Channel, invoke } = window.__TAURI__.core;
+      const args = {
+        subscriptionId: crypto.randomUUID(),
+        onUpdate: new Channel((projection) => {
+          window.projectionReplayProbe.latest = projection;
+        }),
+      };
+      window.projectionReplayProbe = { args, latest: null };
+      return (await invoke("subscribe_projection", args)).revision;
+    });
+    await hook(cx, "Stop");
+    await browser.waitUntil(async () =>
+      browser.execute((revision) => {
+        const latest = window.projectionReplayProbe.latest;
+        return latest?.state === "done" && latest.revision > revision;
+      }, initialRevision),
+    );
+    const replayRevision = await browser.execute(async () => {
+      const { args } = window.projectionReplayProbe;
+      return (await window.__TAURI__.core.invoke("subscribe_projection", args)).revision;
+    });
+    await nativeInvoke("reset_sessions");
+    await browser.waitUntil(
+      async () =>
+        browser.execute((revision) => {
+          const latest = window.projectionReplayProbe.latest;
+          return latest?.state === "idle" && latest.revision > revision;
+        }, replayRevision),
+      { timeoutMsg: "Projection channel stopped delivering after subscription replay" },
+    );
+    await browser.execute(async () => {
+      const { subscriptionId } = window.projectionReplayProbe.args;
+      await window.__TAURI__.core.invoke("unsubscribe_projection", { subscriptionId });
+      delete window.projectionReplayProbe;
+    });
     coldStartReady = true;
   });
   after(() => {

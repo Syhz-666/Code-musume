@@ -21,12 +21,20 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use subtle::ConstantTimeEq;
-use tauri::{ipc::Channel, AppHandle, Emitter, Manager};
+use tauri::{
+    ipc::{Channel, JavaScriptChannelId},
+    AppHandle, Emitter, Manager, Webview,
+};
 use tokio::sync::{mpsc, oneshot};
 
 enum Message {
     Event(EnvelopeV2, usize, Instant),
-    Subscribe(String, Channel<Projection>, oneshot::Sender<Projection>),
+    Subscribe(
+        Box<Webview>,
+        String,
+        JavaScriptChannelId,
+        oneshot::Sender<Projection>,
+    ),
     Unsubscribe(String),
     Get(oneshot::Sender<Projection>),
     Config(
@@ -206,7 +214,17 @@ impl Native {
                             trace.elapsed_ms=Some(at.elapsed().as_secs_f64()*1000.0);
                             state.trace(trace);
                         },
-                        Some(Message::Subscribe(id,c,reply))=>{let label=id.split(':').next().unwrap_or("");subscribers.retain(|old,_|old.split(':').next()!=Some(label));let p=engine.snapshot();let _=c.send(p.clone());subscribers.insert(id,c);let _=reply.send(p);},
+                        Some(Message::Subscribe(webview, token, callback, reply)) => {
+                            let label = webview.label();
+                            let id = format!("{label}:{token}");
+                            // IPC fallback can replay the same request. A second Channel with
+                            // this callback would reset its index and close it when dropped.
+                            if !subscribers.contains_key(&id) {
+                                subscribers.retain(|old, _| old.split(':').next() != Some(label));
+                                subscribers.insert(id, callback.channel_on(*webview));
+                            }
+                            let _ = reply.send(engine.snapshot());
+                        },
                         Some(Message::Unsubscribe(id))=>{subscribers.remove(&id);},
                         Some(Message::Get(reply))=>{engine.tick(state.clock.now());let _=reply.send(engine.snapshot());},
                         #[cfg(feature = "e2e")]
@@ -330,12 +348,13 @@ impl Native {
     }
     pub async fn subscribe(
         &self,
-        id: String,
-        c: Channel<Projection>,
+        webview: Webview,
+        token: String,
+        callback: JavaScriptChannelId,
     ) -> Result<Projection, String> {
         let (tx, rx) = oneshot::channel();
         self.tx
-            .send(Message::Subscribe(id, c, tx))
+            .send(Message::Subscribe(Box::new(webview), token, callback, tx))
             .await
             .map_err(|_| "核心已停止")?;
         rx.await.map_err(|_| "核心已停止".into())
