@@ -1,5 +1,6 @@
 import type { CharacterManifest } from "@code-musume/protocol";
 import attentionUrl from "../assets/builtin/attention.png";
+import errorUrl from "../assets/builtin/error.png";
 import manifest from "../assets/builtin/musume.json";
 import sleepingUrl from "../assets/builtin/sleeping.png";
 import spriteUrl from "../assets/builtin/spritesheet.png";
@@ -13,6 +14,7 @@ export function builtinAssetUrl(image: string) {
   if (image === "thinking.png") return thinkingUrl;
   if (image === "working.png") return workingUrl;
   if (image === "attention.png") return attentionUrl;
+  if (image === "error.png") return errorUrl;
   if (image === "sleeping.png") return sleepingUrl;
   throw new Error("Unknown builtin atlas");
 }

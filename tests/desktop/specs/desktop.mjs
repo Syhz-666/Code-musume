@@ -468,7 +468,7 @@ describe("Actual desktop event chain and settings", () => {
       await pet({ state: "idle", visualReady: true });
     }
   });
-  it("loops waiting and plays each brief acknowledgment once in either renderer", async () => {
+  it("loops waiting, plays brief gestures once and holds the error pose in either renderer", async () => {
     const view = () => browser.execute(() => ({ ...document.querySelector("#app").dataset }));
     for (const renderer of ["pixi", "dom"]) {
       await selectWindow("settings");
@@ -543,6 +543,26 @@ describe("Actual desktop event chain and settings", () => {
       await browser.pause(350);
       assert.deepEqual(Buffer.from(await browser.takeScreenshot(), "base64"), rest);
 
+      assertEntryTiming(await observePreviewEntry("error", "error-enter"));
+      await browser.waitUntil(async () => {
+        const data = await view();
+        return (
+          data.segment === "error" &&
+          data.atlas === "error.png" &&
+          data.frame === "0" &&
+          data.visualReady === "true"
+        );
+      });
+      const concerned = Buffer.from(await browser.takeScreenshot(), "base64");
+      assert.notDeepEqual(concerned, rest);
+      await browser.pause(400);
+      assert.deepEqual(Buffer.from(await browser.takeScreenshot(), "base64"), concerned);
+      assertEntryTiming(
+        await observePreviewEntry("notification", "notification-enter", {
+          exitSegment: "error-exit",
+        }),
+      );
+
       await selectWindow("settings");
       await nativeInvoke("set_config", {
         config: { ...config, reducedMotion: true, manualAnimationEnabled: true },
@@ -592,6 +612,18 @@ describe("Actual desktop event chain and settings", () => {
       assert.notDeepEqual(nod, rest, "Reduced motion should show the nod pose");
       await browser.pause(300);
       assert.deepEqual(Buffer.from(await browser.takeScreenshot(), "base64"), nod);
+
+      await nativeInvoke("set_animation_preview_state", { state: "error" });
+      await browser.waitUntil(async () => {
+        const data = await view();
+        return (
+          data.segment === "error" &&
+          data.frame === "0" &&
+          data.animationRunning === "false" &&
+          data.visualReady === "true"
+        );
+      });
+      assert.deepEqual(Buffer.from(await browser.takeScreenshot(), "base64"), concerned);
     }
   });
   it("keeps waiting isolated between sources and restores the other agent after done", async () => {

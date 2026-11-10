@@ -234,6 +234,7 @@ pub fn asset_page(id: &str, form: &str, image: Option<&str>) -> Result<String, S
             "working.png" => include_bytes!("../../assets/builtin/working.png"),
             "attention.png" => include_bytes!("../../assets/builtin/attention.png"),
             "sleeping.png" => include_bytes!("../../assets/builtin/sleeping.png"),
+            "error.png" => include_bytes!("../../assets/builtin/error.png"),
             _ => return Err("找不到角色图集".into()),
         };
         return Ok(format!("data:image/png;base64,{}", STANDARD.encode(bytes)));
@@ -424,6 +425,9 @@ mod tests {
         let sleeping_bytes = include_bytes!("../../assets/builtin/sleeping.png");
         let sleeping = decode(sleeping_bytes).unwrap().to_rgba8();
         assert_eq!(sleeping.dimensions(), (3072, 1664));
+        let error_bytes = include_bytes!("../../assets/builtin/error.png");
+        let error = decode(error_bytes).unwrap().to_rgba8();
+        assert_eq!(error.dimensions(), (3072, 1040));
         let states = [
             "idle",
             "thinking",
@@ -435,7 +439,7 @@ mod tests {
             "sleeping",
         ];
         for form in &manifest.forms {
-            assert_eq!(form.clips.len(), states.len() + 10);
+            assert_eq!(form.clips.len(), states.len() + 12);
             for state in &states {
                 let clip = &form.clips[*state];
                 if *state == "thinking" {
@@ -479,13 +483,16 @@ mod tests {
                     assert!(clip.looping);
                     continue;
                 }
-                let slot = match *state {
-                    "idle" => 0,
-                    "error" => 243,
-                    _ => unreachable!(),
-                };
-                assert_eq!(clip.row * form.columns + clip.column, slot);
-                assert_eq!(clip.frames, if *state == "idle" { 243 } else { 1 });
+                if *state == "error" {
+                    assert_eq!(clip.image.as_deref(), Some("error.png"));
+                    assert_eq!(clip.frames, 1);
+                    assert_eq!(clip.row * form.columns + clip.column, 33);
+                    assert!(!clip.looping);
+                    continue;
+                }
+                assert_eq!(*state, "idle");
+                assert_eq!(clip.row * form.columns + clip.column, 0);
+                assert_eq!(clip.frames, 243);
             }
             assert_eq!(form.clips["idle"].fps, 24.0);
             assert!(form.clips["idle"].looping);
@@ -516,6 +523,18 @@ mod tests {
                 assert_eq!(clip.fps, fps);
                 assert!(!clip.looping);
             }
+            for (key, slot, fps) in [("error-enter", 0, 24.0), ("error-exit", 34, 60.0)] {
+                let clip = &form.clips[key];
+                assert_eq!(clip.image.as_deref(), Some("error.png"));
+                assert_eq!(clip.row * form.columns + clip.column, slot);
+                assert_eq!(clip.frames, 33);
+                assert_eq!(clip.fps, fps);
+                assert!(!clip.looping);
+            }
+            assert_eq!(
+                asset_page("builtin", &form.id, Some("error.png")).unwrap(),
+                format!("data:image/png;base64,{}", STANDARD.encode(error_bytes))
+            );
             assert_eq!(
                 asset_page("builtin", &form.id, Some("sleeping.png")).unwrap(),
                 format!("data:image/png;base64,{}", STANDARD.encode(sleeping_bytes))
@@ -543,6 +562,7 @@ mod tests {
             (&working, 154),
             (&attention, 212),
             (&sleeping, 125),
+            (&error, 67),
         ] {
             for slot in 0..count {
                 let mut last_solid_y = None;
@@ -584,17 +604,24 @@ mod tests {
         for slot in [16, 107, 108] {
             assert_eq!(cell(&sleeping, 17), cell(&sleeping, slot));
         }
-        let lower_body = |page: &image::RgbaImage, slot| {
-            image::imageops::crop_imm(&cell(page, slot), 0, 136, 192, 72).to_image()
+        for slot in [0, 66] {
+            assert_eq!(cell(&image, 0), cell(&error, slot));
+        }
+        for slot in [32, 34] {
+            assert_eq!(cell(&error, 33), cell(&error, slot));
+        }
+        let lower_body = |page: &image::RgbaImage, slot, top| {
+            image::imageops::crop_imm(&cell(page, slot), 0, top, 192, 208 - top).to_image()
         };
-        let planted = lower_body(&image, 0);
-        for (page, slots) in [
-            (&image, 245..270),
-            (&thinking, 210..246),
-            (&sleeping, 0..125),
+        for (page, slots, top) in [
+            (&image, 245..270, 136),
+            (&thinking, 210..246, 136),
+            (&sleeping, 0..125, 136),
+            (&error, 0..67, 156),
         ] {
+            let planted = lower_body(&image, 0, top);
             for slot in slots {
-                assert_eq!(lower_body(page, slot), planted);
+                assert_eq!(lower_body(page, slot, top), planted);
             }
         }
         assert_eq!(cell(&image, 0), cell(&working, 0));
@@ -638,6 +665,7 @@ mod tests {
             (&thinking, 246..256),
             (&attention, 212..224),
             (&sleeping, 125..128),
+            (&error, 67..80),
         ] {
             for slot in padding {
                 assert!(cell(page, slot).pixels().all(|pixel| pixel.0 == [0; 4]));

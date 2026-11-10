@@ -57,12 +57,13 @@ def start_at_neutral(entry, canonical, blend_frames):
         entry[index] = mix(canonical, entry[index], t * t * (3 - 2 * t))
 
 
-def lock_neutral_stance(frame, neutral):
-    for y in range(124, 136):
+def lock_neutral_stance(frame, neutral, *, top=136):
+    start = top - 12
+    for y in range(start, top):
         strip = (0, y, CELL[0], y + 1)
-        blended = mix(frame.crop(strip), neutral.crop(strip), (y - 124) / 12)
+        blended = mix(frame.crop(strip), neutral.crop(strip), (y - start) / 12)
         frame.paste(blended, (0, y))
-    frame.paste(neutral.crop((0, 136, *CELL)), (0, 136))
+    frame.paste(neutral.crop((0, top, *CELL)), (0, top))
 
 
 def resample(frames, count):
@@ -142,6 +143,25 @@ def write_preview(path, canonical, clips):
         raise ValueError(f"Unable to encode {path.name}")
 
 
+def pack_clips(name, clips):
+    count = sum(len(frames) for _, frames, _, _ in clips)
+    atlas = Image.new("RGBA", (CELL[0] * COLUMNS, CELL[1] * math.ceil(count / COLUMNS)))
+    segments = {}
+    slot = 0
+    for key, frames, fps, looping in clips:
+        segments[key] = {"image": name, "row": slot // COLUMNS, "column": slot % COLUMNS,
+                         "frames": len(frames), "fps": fps, "looping": looping}
+        for frame in frames:
+            bounds = frame.getbbox()
+            if not bounds or not (0 < bounds[0] < bounds[2] < CELL[0] and 0 < bounds[1] < bounds[3] < CELL[1]):
+                raise ValueError(f"Frame {slot} is empty or reaches the atlas cell edge")
+            if not 199 <= solid(frame)[3] <= 202:
+                raise ValueError(f"Frame {slot} moves off the shared foot baseline")
+            helpers["paste"](atlas, frame, slot)
+            slot += 1
+    return atlas, segments, count
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--waiting-source", type=Path, required=True)
@@ -167,21 +187,7 @@ def main():
             args.notification_source, canonical, args.notification_range
         )
         clips += notification
-    frame_count = sum(len(frames) for _, frames, _, _ in clips)
-    atlas = Image.new("RGBA", (CELL[0] * COLUMNS, CELL[1] * math.ceil(frame_count / COLUMNS)))
-    segments = {}
-    slot = 0
-    for key, frames, fps, looping in clips:
-        segments[key] = {"image": ATLAS, "row": slot // COLUMNS, "column": slot % COLUMNS,
-                         "frames": len(frames), "fps": fps, "looping": looping}
-        for frame in frames:
-            bounds = frame.getbbox()
-            if not bounds or not (0 < bounds[0] < bounds[2] < CELL[0] and 0 < bounds[1] < bounds[3] < CELL[1]):
-                raise ValueError(f"Frame {slot} is empty or reaches the atlas cell edge")
-            if not 199 <= solid(frame)[3] <= 202:
-                raise ValueError(f"Frame {slot} moves off the shared foot baseline")
-            helpers["paste"](atlas, frame, slot)
-            slot += 1
+    atlas, segments, frame_count = pack_clips(ATLAS, clips)
 
     for form in manifest["forms"]:
         form["clips"].update(segments)

@@ -63,11 +63,12 @@
           "image": "thinking.png"
         },
         "error": {
-          "row": 15,
-          "column": 3,
+          "image": "error.png",
+          "row": 2,
+          "column": 1,
           "frames": 1,
           "fps": 1,
-          "looping": true
+          "looping": false
         },
         "sleeping": {
           "image": "sleeping.png",
@@ -154,6 +155,22 @@
           "column": 12,
           "frames": 17,
           "fps": 48,
+          "looping": false
+        },
+        "error-enter": {
+          "image": "error.png",
+          "row": 0,
+          "column": 0,
+          "frames": 33,
+          "fps": 24,
+          "looping": false
+        },
+        "error-exit": {
+          "image": "error.png",
+          "row": 2,
+          "column": 2,
+          "frames": 33,
+          "fps": 60,
           "looping": false
         }
       },
@@ -214,11 +231,12 @@
           "image": "thinking.png"
         },
         "error": {
-          "row": 15,
-          "column": 3,
+          "image": "error.png",
+          "row": 2,
+          "column": 1,
           "frames": 1,
           "fps": 1,
-          "looping": true
+          "looping": false
         },
         "sleeping": {
           "image": "sleeping.png",
@@ -305,6 +323,22 @@
           "column": 12,
           "frames": 17,
           "fps": 48,
+          "looping": false
+        },
+        "error-enter": {
+          "image": "error.png",
+          "row": 0,
+          "column": 0,
+          "frames": 33,
+          "fps": 24,
+          "looping": false
+        },
+        "error-exit": {
+          "image": "error.png",
+          "row": 2,
+          "column": 2,
+          "frames": 33,
+          "fps": 60,
           "looping": false
         }
       },
@@ -365,11 +399,12 @@
           "image": "thinking.png"
         },
         "error": {
-          "row": 15,
-          "column": 3,
+          "image": "error.png",
+          "row": 2,
+          "column": 1,
           "frames": 1,
           "fps": 1,
-          "looping": true
+          "looping": false
         },
         "sleeping": {
           "image": "sleeping.png",
@@ -456,6 +491,22 @@
           "column": 12,
           "frames": 17,
           "fps": 48,
+          "looping": false
+        },
+        "error-enter": {
+          "image": "error.png",
+          "row": 0,
+          "column": 0,
+          "frames": 33,
+          "fps": 24,
+          "looping": false
+        },
+        "error-exit": {
+          "image": "error.png",
+          "row": 2,
+          "column": 2,
+          "frames": 33,
+          "fps": 60,
           "looping": false
         }
       },

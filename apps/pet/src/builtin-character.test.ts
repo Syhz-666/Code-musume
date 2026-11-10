@@ -26,6 +26,8 @@ describe("bundled homewear character", () => {
           "done-enter",
           "sleeping-enter",
           "sleeping-exit",
+          "error-enter",
+          "error-exit",
         ].sort(),
       );
       expect(form.cellWidth).toBe(192);
@@ -113,21 +115,43 @@ describe("bundled homewear character", () => {
         fps: 48,
         looping: false,
       });
+      expect(form.clips["error-enter"]).toEqual({
+        image: "error.png",
+        row: 0,
+        column: 0,
+        frames: 33,
+        fps: 24,
+        looping: false,
+      });
+      expect(form.clips.error).toEqual({
+        image: "error.png",
+        row: 2,
+        column: 1,
+        frames: 1,
+        fps: 1,
+        looping: false,
+      });
+      expect(form.clips["error-exit"]).toEqual({
+        image: "error.png",
+        row: 2,
+        column: 2,
+        frames: 33,
+        fps: 60,
+        looping: false,
+      });
       expect(builtinAssetUrl("attention.png")).toContain("attention.png");
       expect(builtinAssetUrl("sleeping.png")).toContain("sleeping.png");
+      expect(builtinAssetUrl("error.png")).toContain("error.png");
       expect(() => builtinAssetUrl("missing.png")).toThrow();
       const occupied = new Set<string>();
-      for (const [state, clip] of Object.entries(form.clips)) {
-        if (state === "error") {
-          expect(clip.frames).toBe(1);
-        }
+      for (const clip of Object.values(form.clips)) {
         for (let i = 0; i < clip.frames; i++) {
           const slot = `${clip.image ?? form.image}:${clip.row * form.columns + clip.column + i}`;
           expect(occupied.has(slot)).toBe(false);
           occupied.add(slot);
         }
       }
-      expect(occupied.size).toBe(1006);
+      expect(occupied.size).toBe(1072);
     }
   });
 });

@@ -182,12 +182,12 @@
       }
     },
     "pixi-error": {
-      "sha256": "bfd485bf5f37702cf966fdc0cb0f17952b4b38607be8ca1ac03717406744482f",
+      "sha256": "c0fd7c2e9b737a225f53055008614f8ea39d33bf1879d950de1041a79afcfd92",
       "reviewer": "Codex",
       "reviewMode": "user-delegated-agent",
-      "authorization": "用户此前明确委托“帮我完成决策”；已检查完整桌宠和设置截图，确认本轮只有测试滚动条样式的预期变化。",
-      "reviewedAt": "2026-10-30T03:55:34.327Z",
-      "sourceRun": "ui-2026-10-29T15-37-18-967Z",
+      "authorization": "用户要求“审阅受影响截图后更新视觉基准”。已审阅两种渲染器的出错定姿。",
+      "reviewedAt": "2026-11-10T07:02:25.526Z",
+      "sourceRun": "ui-20261110-error-review",
       "environment": {
         "dpr": 1,
         "font": "\"Code Musume Test\", sans-serif",
@@ -196,7 +196,7 @@
         "scrollHeight": 210,
         "scrollbarWidth": 0,
         "systemReducedMotion": false,
-        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0",
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36 Edg/157.0.0.0",
         "viewportWidth": 160,
         "width": 160
       }
@@ -342,12 +342,12 @@
       }
     },
     "dom-error": {
-      "sha256": "df3ea3e839d96827d4c67d327e57f4e90d8a2e1d72f46278955bd15ed302d591",
+      "sha256": "d8e850f0c98db7905811a8d13ea1596963128a6653df188b68f40effa5ab6781",
       "reviewer": "Codex",
       "reviewMode": "user-delegated-agent",
-      "authorization": "用户此前明确委托“帮我完成决策”；已检查完整桌宠和设置截图，确认本轮只有测试滚动条样式的预期变化。",
-      "reviewedAt": "2026-10-30T03:55:34.340Z",
-      "sourceRun": "ui-2026-10-29T15-37-18-967Z",
+      "authorization": "用户要求“审阅受影响截图后更新视觉基准”。已审阅两种渲染器的出错定姿。",
+      "reviewedAt": "2026-11-10T07:02:25.526Z",
+      "sourceRun": "ui-20261110-error-review",
       "environment": {
         "dpr": 1,
         "font": "\"Code Musume Test\", sans-serif",
@@ -356,7 +356,7 @@
         "scrollHeight": 210,
         "scrollbarWidth": 0,
         "systemReducedMotion": false,
-        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0",
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36 Edg/157.0.0.0",
         "viewportWidth": 160,
         "width": 160
       }
