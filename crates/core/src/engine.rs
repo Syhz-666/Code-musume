@@ -10,6 +10,21 @@ pub const UNCERTAIN_MS: u64 = 300_000;
 pub const SLEEP_MS: u64 = 600_000;
 pub const MAX_SESSIONS: usize = 8;
 type SessionKey = (Agent, String);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexApprovals {
+    pub manual: usize,
+    pub human_input: usize,
+    pub automatic: usize,
+}
+
+impl CodexApprovals {
+    fn pending(self) -> usize {
+        self.manual + self.human_input
+    }
+}
+
 #[derive(Debug, Clone)]
 struct Tool {
     turn: Option<String>,
@@ -52,6 +67,7 @@ struct Session {
     background: usize,
     background_last: u64,
     degraded: bool,
+    codex_approvals: Option<(CodexApprovals, u64)>,
 }
 impl Session {
     fn new(now: u64) -> Self {
@@ -64,10 +80,12 @@ impl Session {
             background: 0,
             background_last: now,
             degraded: false,
+            codex_approvals: None,
         }
     }
     fn pending(&self) -> usize {
-        self.actors.values().map(|a| a.pending.len()).sum()
+        self.actors.values().map(|a| a.pending.len()).sum::<usize>()
+            + self.codex_approvals.map_or(0, |(state, _)| state.pending())
     }
     fn view(&self, now: u64) -> (DisplayState, Certainty, u64) {
         let pending_since = self
@@ -75,6 +93,11 @@ impl Session {
             .values()
             .flat_map(|a| &a.pending)
             .map(|p| p.since)
+            .chain(
+                self.codex_approvals
+                    .filter(|(state, _)| state.pending() > 0)
+                    .map(|(_, since)| since),
+            )
             .min();
         if let Some(since) = pending_since {
             return (
@@ -102,6 +125,12 @@ impl Session {
                 },
                 self.last,
             );
+        }
+        if self
+            .codex_approvals
+            .is_some_and(|(state, _)| state.automatic > 0)
+        {
+            return (DisplayState::Working, Certainty::Observed, self.last);
         }
         let work_times: Vec<_> = self
             .actors
@@ -165,6 +194,7 @@ pub struct Engine {
     last_activity: u64,
     pub config: Config,
     missed: u64,
+    codex_approval_sync: bool,
     pub character_forms: BTreeMap<String, String>,
     pub default_form: String,
 }
@@ -178,6 +208,7 @@ impl Engine {
             seq: 0,
             last_activity: 0,
             missed: 0,
+            codex_approval_sync: false,
             character_forms: BTreeMap::from([
                 ("claude-code".into(), "claude".into()),
                 ("codex".into(), "codex".into()),
@@ -206,6 +237,53 @@ impl Engine {
     }
     pub fn snapshot(&self) -> Projection {
         self.projection.clone()
+    }
+    pub fn with_codex_approval_sync(mut self, enabled: bool) -> Self {
+        self.codex_approval_sync = enabled;
+        self
+    }
+    pub fn codex_sessions(&self) -> Vec<String> {
+        self.sessions
+            .iter()
+            .filter(|((agent, _), session)| *agent == Agent::Codex && !session.ended)
+            .map(|((_, id), _)| id.clone())
+            .collect()
+    }
+    pub fn codex_approvals(&self) -> BTreeMap<String, Option<CodexApprovals>> {
+        self.sessions
+            .iter()
+            .filter(|((agent, _), session)| *agent == Agent::Codex && !session.ended)
+            .map(|((_, id), session)| {
+                (
+                    short_hash(id),
+                    session.codex_approvals.map(|(state, _)| state),
+                )
+            })
+            .collect()
+    }
+    pub fn update_codex_approvals(&mut self, id: String, next: Option<CodexApprovals>, now: u64) {
+        let Some(session) = self
+            .sessions
+            .get_mut(&(Agent::Codex, id))
+            .filter(|s| !s.ended)
+        else {
+            return;
+        };
+        if session.codex_approvals.map(|(state, _)| state) == next {
+            return;
+        }
+        let since = session
+            .codex_approvals
+            .filter(|(state, _)| {
+                state.pending() > 0 && next.is_some_and(|state| state.pending() > 0)
+            })
+            .map_or(now, |(_, since)| since);
+        session.codex_approvals = next.map(|state| (state, since));
+        if next.is_some_and(|state| state.pending() > 0 || state.automatic > 0) {
+            session.last = now;
+            self.last_activity = now;
+        }
+        self.tick(now);
     }
     pub fn diagnostics(&self) -> Vec<Diagnostic> {
         self.diagnostics.iter().cloned().collect()
@@ -283,7 +361,14 @@ impl Engine {
                     .sessions
                     .entry(key)
                     .or_insert_with(|| Session::new(now));
-                let outcome = Self::apply(s, &e, now);
+                let outcome = if self.codex_approval_sync
+                    && e.agent == Agent::Codex
+                    && e.kind == Kind::Permission
+                {
+                    "awaiting-desktop-approval-state"
+                } else {
+                    Self::apply(s, &e, now)
+                };
                 if outcome == "applied" {
                     self.last_activity = now;
                 }
@@ -312,6 +397,7 @@ impl Engine {
             s.notices.clear();
             s.last = now;
             s.background = 0;
+            s.codex_approvals = None;
             return "applied";
         }
         if e.kind == Kind::SessionStart {

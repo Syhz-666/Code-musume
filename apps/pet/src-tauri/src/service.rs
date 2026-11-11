@@ -9,7 +9,7 @@ use axum::{
     Json, Router,
 };
 use code_musume_contracts::*;
-use code_musume_core::Engine;
+use code_musume_core::{engine::CodexApprovals, Engine};
 use code_musume_hook::runtime::{atomic_write, config_dir, runtime_path};
 use std::{
     collections::BTreeMap,
@@ -25,7 +25,13 @@ use tauri::{
     ipc::{Channel, JavaScriptChannelId},
     AppHandle, Emitter, Manager, Webview,
 };
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot, watch};
+
+type Inspection = (
+    Projection,
+    Vec<Diagnostic>,
+    BTreeMap<String, Option<CodexApprovals>>,
+);
 
 enum Message {
     Event(EnvelopeV2, usize, Instant),
@@ -43,7 +49,7 @@ enum Message {
         oneshot::Sender<Result<Config, String>>,
     ),
     Diagnostics(oneshot::Sender<Vec<Diagnostic>>),
-    Inspect(oneshot::Sender<(Projection, Vec<Diagnostic>)>),
+    Inspect(oneshot::Sender<Inspection>),
     Reset,
     Position(Position),
     PreviewEnabled(bool, oneshot::Sender<Result<AnimationPreview, String>>),
@@ -84,6 +90,7 @@ pub struct Native {
     pub render_receipts: Mutex<super::render_receipts::RenderReceipts>,
     pub animation_preview: Mutex<super::animation_preview::PreviewController>,
     pipeline: Mutex<PipelineDiagnostics>,
+    codex_approval_sync: bool,
     clock: Clock,
 }
 impl Native {
@@ -99,7 +106,7 @@ impl Native {
             .send(Message::Inspect(tx))
             .await
             .map_err(|_| "核心已停止")?;
-        let (projection, diagnostics) = rx.await.map_err(|_| "核心已停止")?;
+        let (projection, diagnostics, approvals) = rx.await.map_err(|_| "核心已停止")?;
         let pipeline = self.pipeline.lock().unwrap().snapshot();
         let preview = self.animation_preview.lock().unwrap().snapshot();
         let receipt = self.render_receipts.lock().unwrap().latest.clone();
@@ -111,9 +118,22 @@ impl Native {
                 "limitEntries": MAX_QUEUE_ENTRIES, "limitBytes": MAX_QUEUE_BYTES, "unprocessedLoss": self.lost.load(Ordering::SeqCst)},
             "projection": projection, "coreDiagnostics": diagnostics,
             "pipeline": pipeline, "preview": preview, "renderReceipt": receipt,
+            "codexApprovalSync": {"enabled": self.codex_approval_sync, "sessions": approvals},
         }))
     }
     pub fn start(app: Option<AppHandle>, mode: &str) -> Result<Arc<Self>, String> {
+        #[cfg(windows)]
+        let approval_pipe =
+            (app.is_some() && !cfg!(feature = "e2e")).then_some(super::codex_approval::PIPE);
+        #[cfg(not(windows))]
+        let approval_pipe = None;
+        Self::start_with_approval_pipe(app, mode, approval_pipe)
+    }
+    fn start_with_approval_pipe(
+        app: Option<AppHandle>,
+        mode: &str,
+        approval_pipe: Option<&str>,
+    ) -> Result<Arc<Self>, String> {
         let path = config_dir().join("config.json");
         let mut config = match fs::read(&path) {
             Ok(b) => match serde_json::from_slice::<Config>(&b)
@@ -166,6 +186,17 @@ impl Native {
                 .as_millis() as u64,
         };
         let (tx, mut rx) = mpsc::channel(MAX_QUEUE_ENTRIES);
+        let (codex_sessions, wanted) = watch::channel(Vec::new());
+        let (approval_updates, mut approvals) = mpsc::channel(MAX_QUEUE_ENTRIES);
+        let codex_approval_sync = approval_pipe.is_some();
+        #[cfg(windows)]
+        if let Some(path) = approval_pipe.map(str::to_owned) {
+            tauri::async_runtime::spawn(async move {
+                super::codex_approval::observe(&path, wanted, approval_updates).await;
+            });
+        }
+        #[cfg(not(windows))]
+        drop((wanted, approval_updates));
         let native = Arc::new(Self {
             clock: Clock {
                 start: Instant::now(),
@@ -178,6 +209,7 @@ impl Native {
             )),
             tx,
             pipeline: Mutex::new(PipelineDiagnostics::default()),
+            codex_approval_sync,
             bytes: AtomicUsize::new(0),
             lost: AtomicU64::new(0),
             config: Mutex::new(config.clone()),
@@ -189,7 +221,8 @@ impl Native {
         let state = native.clone();
         let instance = native.runtime.instance_id.clone();
         tauri::async_runtime::spawn(async move {
-            let mut engine = Engine::new(instance, config);
+            let mut engine =
+                Engine::new(instance, config).with_codex_approval_sync(codex_approval_sync);
             engine.character_forms = character.agent_forms;
             engine.default_form = character.default_form;
             let mut subscribers: BTreeMap<String, Channel<Projection>> = BTreeMap::new();
@@ -209,6 +242,14 @@ impl Native {
                             let mut trace=PipelineTrace::event("core","processed",&e);
                             trace.before=Some((&engine.snapshot()).into());
                             engine.ingest(e,state.clock.now());
+                            if codex_approval_sync {
+                                codex_sessions.send_if_modified(|wanted| {
+                                    let next = engine.codex_sessions();
+                                    if *wanted == next { return false; }
+                                    *wanted = next;
+                                    true
+                                });
+                            }
                             trace.outcome=engine.latest_diagnostic().map(|d|d.outcome.clone()).unwrap_or_else(||"no-outcome".into());
                             trace.after=Some((&engine.snapshot()).into());
                             trace.elapsed_ms=Some(at.elapsed().as_secs_f64()*1000.0);
@@ -230,8 +271,11 @@ impl Native {
                         #[cfg(feature = "e2e")]
                         Some(Message::AdvanceClock(ms,reply))=>{state.clock.offset.fetch_add(ms,Ordering::SeqCst);engine.tick(state.clock.now());let _=reply.send(engine.snapshot());},
                         Some(Message::Diagnostics(reply))=>{let _=reply.send(engine.diagnostics());},
-                        Some(Message::Inspect(reply))=>{let _=reply.send((engine.snapshot(),engine.diagnostics()));},
-                        Some(Message::Reset)=>engine.reset(now),
+                        Some(Message::Inspect(reply))=>{let _=reply.send((engine.snapshot(),engine.diagnostics(),engine.codex_approvals()));},
+                        Some(Message::Reset)=>{
+                            engine.reset(now);
+                            if codex_approval_sync { codex_sessions.send_replace(Vec::new()); }
+                        },
                         Some(Message::Position(p))=>{engine.config.position=Some(p);*state.config.lock().unwrap()=engine.config.clone();position_dirty=true;last_position=Instant::now();},
                         Some(Message::PreviewEnabled(enabled, reply))=>{
                             let result=(||{
@@ -268,6 +312,10 @@ impl Native {
                             let _=reply.send(result);
                         },
                         None=>break,
+                    },
+                    Some((id, next))=approvals.recv()=>{
+                        received=Some(Instant::now());
+                        engine.update_codex_approvals(id,next,state.clock.now());
                     },
                     _=timer.tick()=>{
                         let now=state.clock.now();let lost=state.lost.swap(0,Ordering::SeqCst);if lost>0{engine.lost(lost,now);}engine.tick(now);

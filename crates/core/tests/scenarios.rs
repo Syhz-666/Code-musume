@@ -1,4 +1,5 @@
 use code_musume_contracts::*;
+use code_musume_core::engine::CodexApprovals;
 use code_musume_core::Engine;
 use serde_json::{json, Value};
 fn event(
@@ -34,6 +35,68 @@ fn event(
 }
 fn engine() -> Engine {
     Engine::new("test".into(), Config::default())
+}
+#[test]
+fn codex_desktop_approvals_do_not_clear_other_sources_or_create_sessions() {
+    let mut e = engine().with_codex_approval_sync(true);
+    let pending = CodexApprovals {
+        manual: 1,
+        human_input: 0,
+        automatic: 0,
+    };
+    e.update_codex_approvals("untracked".into(), Some(pending), 0);
+    assert_eq!(e.snapshot().active_sessions, 0);
+    e.ingest(
+        event(
+            Agent::ClaudeCode,
+            "PermissionRequest",
+            "same",
+            "a",
+            json!({}),
+            "1",
+        ),
+        1,
+    );
+    e.ingest(
+        event(
+            Agent::Codex,
+            "UserPromptSubmit",
+            "same",
+            "b",
+            json!({}),
+            "2",
+        ),
+        2,
+    );
+    e.ingest(
+        event(
+            Agent::Codex,
+            "PermissionRequest",
+            "same",
+            "b",
+            json!({}),
+            "3",
+        ),
+        3,
+    );
+    assert_eq!(e.snapshot().pending_count, 1);
+    e.update_codex_approvals("same".into(), Some(pending), 4);
+    assert_eq!(e.snapshot().pending_count, 2);
+    e.ingest(
+        event(Agent::Codex, "PostToolUse", "same", "b", json!({}), "4"),
+        5,
+    );
+    assert_eq!(e.snapshot().pending_count, 2);
+    e.update_codex_approvals("same".into(), None, 6);
+    assert_eq!(e.snapshot().pending_count, 1);
+    assert_eq!(e.snapshot().dominant_agent, Some(Agent::ClaudeCode));
+    e.ingest(
+        event(Agent::Codex, "SessionEnd", "same", "b", json!({}), "5"),
+        7,
+    );
+    assert!(e.codex_sessions().is_empty());
+    e.update_codex_approvals("same".into(), Some(pending), 8);
+    assert_eq!(e.snapshot().pending_count, 1);
 }
 #[test]
 fn two_agents_done_returns_to_other_work() {

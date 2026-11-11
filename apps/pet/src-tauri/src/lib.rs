@@ -1,5 +1,7 @@
 mod animation_preview;
 mod characters;
+#[cfg(windows)]
+mod codex_approval;
 #[cfg(feature = "e2e")]
 mod e2e_environment;
 mod pipeline_diagnostics;

@@ -2666,6 +2666,7 @@ dependencies = [
  "code-musume-core",
  "code-musume-hook",
  "image",
+ "json-patch",
  "serde",
  "serde_json",
  "sha2",

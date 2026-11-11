@@ -25,7 +25,11 @@ export function diagnosticHints(report, view = {}) {
       hints.push(
         `input-invalid:${entry.input.errorKind};event=${entry.eventId ?? "unknown"};line=${entry.input.errorLine};column=${entry.input.errorColumn}`,
       );
-    if (entry.stage === "core" && entry.outcome !== "applied")
+    if (
+      entry.stage === "core" &&
+      entry.outcome !== "applied" &&
+      entry.outcome !== "awaiting-desktop-approval-state"
+    )
       hints.push(`core:${entry.outcome};event=${entry.eventId}`);
   }
   if (view.animationRunning === "false") {

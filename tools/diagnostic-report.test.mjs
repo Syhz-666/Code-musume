@@ -13,6 +13,7 @@ test("explains invalid input and motion preference instead of a generic render t
             input: { jsonValid: false, errorKind: "utf8-bom", errorLine: 1, errorColumn: 1 },
           },
           { stage: "core", eventId: "abc", outcome: "invalid-payload" },
+          { stage: "core", eventId: "permission", outcome: "awaiting-desktop-approval-state" },
         ],
       },
     },
@@ -25,6 +26,7 @@ test("explains invalid input and motion preference instead of a generic render t
   );
   assert(hints.some((h) => h.includes("utf8-bom")));
   assert(hints.includes("core:invalid-payload;event=abc"));
+  assert(!hints.some((hint) => hint.includes("awaiting-desktop-approval-state")));
   assert(hints.includes("animation:system-reduced-motion"));
   assert(hints.some((h) => h.includes("revision-not-submitted")));
 });
