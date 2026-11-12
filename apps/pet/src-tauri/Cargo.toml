@@ -1,6 +1,6 @@
 [package]
 name = "pet"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "代码娘桌宠应用（M1 骨架）"
 

@@ -1,6 +1,6 @@
 [package]
 name = "code-musume-hook"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "代码娘 hook CLI（哑管道）——永远 exit 0、不写 stdout、不做决策"
 
