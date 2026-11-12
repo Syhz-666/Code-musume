@@ -17,6 +17,10 @@ coverage/
 !.vscode/extensions.json
 .idea/
 
+# 本机 hook 接线（含绝对路径）与安装器备份；.codex/ 下的示例文件仍可跟踪
+/.codex/hooks.json
+/.codex/*.bak
+
 # 环境变量
 .env
 .env.*

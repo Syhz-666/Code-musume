@@ -1,0 +1,106 @@
+{
+  "schemaVersion": 1,
+  "id": "codex-desktop-resolved",
+  "description": "桌面快照晚于 hook 请求时以桌面为准；桌面报告处理完后，即使随后失联也不恢复旧请求。",
+  "provenance": "synthetic",
+  "sourceVersions": {
+    "codex": "0.165.0-alpha.1.2"
+  },
+  "codexApprovalSync": true,
+  "steps": [
+    {
+      "atMs": 0,
+      "action": {
+        "type": "event",
+        "agent": "codex",
+        "event": "UserPromptSubmit",
+        "id": "1",
+        "payload": {
+          "hook_event_name": "UserPromptSubmit",
+          "session_id": "session",
+          "turn_id": "turn"
+        }
+      },
+      "expect": {
+        "state": "thinking",
+        "certainty": "observed",
+        "dominantAgent": "codex",
+        "pendingCount": 0,
+        "formId": "codex"
+      }
+    },
+    {
+      "atMs": 1,
+      "action": {
+        "type": "event",
+        "agent": "codex",
+        "event": "PermissionRequest",
+        "id": "2",
+        "payload": {
+          "hook_event_name": "PermissionRequest",
+          "session_id": "session",
+          "turn_id": "turn",
+          "tool_name": "Bash",
+          "tool_input": {
+            "command": "ls"
+          }
+        }
+      },
+      "expect": {
+        "state": "waiting-permission",
+        "certainty": "observed",
+        "dominantAgent": "codex",
+        "pendingCount": 1,
+        "formId": "codex"
+      }
+    },
+    {
+      "atMs": 2,
+      "action": {
+        "type": "approvals",
+        "session": "session",
+        "manual": 1,
+        "humanInput": 0,
+        "automatic": 0
+      },
+      "expect": {
+        "state": "waiting-permission",
+        "certainty": "observed",
+        "dominantAgent": "codex",
+        "pendingCount": 1,
+        "formId": "codex"
+      }
+    },
+    {
+      "atMs": 3,
+      "action": {
+        "type": "approvals",
+        "session": "session",
+        "manual": 0,
+        "humanInput": 0,
+        "automatic": 0
+      },
+      "expect": {
+        "state": "thinking",
+        "certainty": "observed",
+        "dominantAgent": "codex",
+        "pendingCount": 0,
+        "formId": "codex"
+      }
+    },
+    {
+      "atMs": 4,
+      "action": {
+        "type": "desktop-lost",
+        "session": "session"
+      },
+      "expect": {
+        "state": "thinking",
+        "certainty": "observed",
+        "dominantAgent": "codex",
+        "pendingCount": 0,
+        "formId": "codex"
+      }
+    }
+  ]
+}

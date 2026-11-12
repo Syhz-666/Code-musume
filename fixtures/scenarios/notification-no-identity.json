@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 1,
+  "id": "notification-no-identity",
+  "description": "Claude 的权限通知本身不带工具身份，仍显示等待，由轮次结束清除。",
+  "provenance": "synthetic",
+  "sourceVersions": {
+    "claude-code": "2.1.295"
+  },
+  "steps": [
+    {
+      "atMs": 0,
+      "action": {
+        "type": "event",
+        "agent": "claude-code",
+        "event": "UserPromptSubmit",
+        "id": "1",
+        "payload": {
+          "hook_event_name": "UserPromptSubmit",
+          "session_id": "session",
+          "prompt_id": "turn"
+        }
+      },
+      "expect": {
+        "state": "thinking",
+        "certainty": "observed",
+        "dominantAgent": "claude-code",
+        "pendingCount": 0,
+        "formId": "claude"
+      }
+    },
+    {
+      "atMs": 1,
+      "action": {
+        "type": "event",
+        "agent": "claude-code",
+        "event": "Notification",
+        "id": "2",
+        "payload": {
+          "hook_event_name": "Notification",
+          "session_id": "session",
+          "prompt_id": "turn",
+          "notification_type": "permission_prompt"
+        }
+      },
+      "expect": {
+        "state": "waiting-permission",
+        "certainty": "observed",
+        "dominantAgent": "claude-code",
+        "pendingCount": 1,
+        "formId": "claude"
+      },
+      "diagnostic": "applied"
+    },
+    {
+      "atMs": 2,
+      "action": {
+        "type": "event",
+        "agent": "claude-code",
+        "event": "Stop",
+        "id": "3",
+        "payload": {
+          "hook_event_name": "Stop",
+          "session_id": "session",
+          "prompt_id": "turn"
+        }
+      },
+      "expect": {
+        "state": "done",
+        "certainty": "observed",
+        "dominantAgent": "claude-code",
+        "pendingCount": 0,
+        "formId": "claude"
+      }
+    }
+  ]
+}

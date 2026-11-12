@@ -31,6 +31,8 @@ pub struct CanonicalEvent {
     pub tool_name: Option<String>,
     pub fingerprint: Option<String>,
     pub kind: Kind,
+    /// Claude permission notifications carry no tool identity by design.
+    pub from_notification: bool,
     pub background_count: usize,
 }
 fn field(v: &Value, key: &str) -> Option<String> {
@@ -143,6 +145,7 @@ pub fn normalize(e: &EnvelopeV2) -> Result<Option<CanonicalEvent>, &'static str>
         tool_name: field(&v, "tool_name"),
         fingerprint,
         kind,
+        from_notification: e.event == "Notification",
         background_count: v["background_tasks"].as_array().map_or(0, Vec::len),
     }))
 }

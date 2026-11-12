@@ -32,6 +32,21 @@ const defaults: Config = {
   position: null,
 };
 const agentNames: Record<Agent, string> = { "claude-code": "Claude Code", codex: "Codex 桌面" };
+type CodexSync = {
+  enabled: boolean;
+  sessions: Record<string, { status: "observed" | "degraded" | "never" }>;
+  rejected: { version: number; shape: number; revision: number } | null;
+};
+function codexSyncText(sync: CodexSync) {
+  if (!sync.enabled) return "未启用";
+  if (sync.rejected && sync.rejected.version > 0)
+    return "Codex 桌面版本与代码娘不兼容，等待提示改用 hook 推断";
+  const sessions = Object.values(sync.sessions);
+  if (!sessions.length) return "尚无会话";
+  const observed = sessions.filter((s) => s.status === "observed").length;
+  const degraded = sessions.some((s) => s.status === "degraded");
+  return `已同步 ${observed}/${sessions.length}${degraded ? "，部分会话失联，等待提示改用 hook 推断" : ""}`;
+}
 function Settings() {
   const [p, setP] = useState(preview),
     [config, setConfig] = useState(defaults);
@@ -40,7 +55,8 @@ function Settings() {
     [cwd, setCwd] = useState("");
   const [characters, setCharacters] = useState<CharacterManifest[]>([builtinManifest]),
     [statuses, setStatuses] = useState<HookStatus[]>([]),
-    [diagnostics, setDiagnostics] = useState<Diagnostic[]>([]);
+    [diagnostics, setDiagnostics] = useState<Diagnostic[]>([]),
+    [codexSync, setCodexSync] = useState<CodexSync | null>(null);
   const [message, setMessage] = useState(""),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
@@ -626,14 +642,23 @@ function Settings() {
                   : "暂不确定"}{" "}
               · 丢失或无效事件：{p.missedEvents}
             </p>
+            {codexSync && (
+              <p data-testid="codex-approval-sync">
+                Codex 桌面审批同步：{codexSyncText(codexSync)}
+              </p>
+            )}
             <div className="actions">
               <button
                 type="button"
                 disabled={busy || !isTauri()}
                 onClick={() =>
-                  void task(async () =>
-                    setDiagnostics(await invoke<Diagnostic[]>("get_diagnostics")),
-                  )
+                  void task(async () => {
+                    setDiagnostics(await invoke<Diagnostic[]>("get_diagnostics"));
+                    const report = await invoke<{ codexApprovalSync: CodexSync }>(
+                      "get_pipeline_diagnostics",
+                    );
+                    setCodexSync(report.codexApprovalSync);
+                  })
                 }
               >
                 刷新事件记录

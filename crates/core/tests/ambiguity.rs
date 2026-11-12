@@ -81,6 +81,34 @@ fn description_is_part_of_generic_tool_input_identity() {
 
 #[test]
 fn late_permission_cannot_reopen_terminal_tool() {
+    // Real PermissionRequest payloads carry no tool_use_id; match by name and input.
+    let mut engine = Engine::new("test".into(), Config::default());
+    let tool = r#""session_id":"s","turn_id":"t","tool_name":"Bash","tool_input":{"command":"ls"}"#;
+    engine.ingest(
+        e(
+            "PreToolUse",
+            "a",
+            &format!(r#"{{{tool},"tool_use_id":"one"}}"#),
+        ),
+        0,
+    );
+    engine.ingest(
+        e(
+            "PostToolUse",
+            "b",
+            &format!(r#"{{{tool},"tool_use_id":"one"}}"#),
+        ),
+        1,
+    );
+    engine.ingest(e("PermissionRequest", "c", &format!("{{{tool}}}")), 2);
+    assert_eq!(engine.snapshot().pending_count, 0);
+    assert_eq!(
+        engine.diagnostics().last().unwrap().outcome,
+        "completed-tool"
+    );
+}
+#[test]
+fn late_permission_with_explicit_tool_id_cannot_reopen_terminal_tool() {
     let mut engine = Engine::new("test".into(), Config::default());
     let payload = r#"{"session_id":"s","turn_id":"t","tool_use_id":"one"}"#;
     engine.ingest(e("PostToolUse", "a", payload), 0);

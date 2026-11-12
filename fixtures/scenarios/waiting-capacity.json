@@ -17,7 +17,11 @@
         "payload": {
           "hook_event_name": "PermissionRequest",
           "session_id": "0",
-          "turn_id": "turn"
+          "turn_id": "turn",
+          "tool_name": "Bash",
+          "tool_input": {
+            "command": "fixture"
+          }
         }
       },
       "expect": {
@@ -39,7 +43,11 @@
         "payload": {
           "hook_event_name": "PermissionRequest",
           "session_id": "1",
-          "turn_id": "turn"
+          "turn_id": "turn",
+          "tool_name": "Bash",
+          "tool_input": {
+            "command": "fixture"
+          }
         }
       },
       "expect": {
@@ -61,7 +69,11 @@
         "payload": {
           "hook_event_name": "PermissionRequest",
           "session_id": "2",
-          "turn_id": "turn"
+          "turn_id": "turn",
+          "tool_name": "Bash",
+          "tool_input": {
+            "command": "fixture"
+          }
         }
       },
       "expect": {
@@ -83,7 +95,11 @@
         "payload": {
           "hook_event_name": "PermissionRequest",
           "session_id": "3",
-          "turn_id": "turn"
+          "turn_id": "turn",
+          "tool_name": "Bash",
+          "tool_input": {
+            "command": "fixture"
+          }
         }
       },
       "expect": {
@@ -105,7 +121,11 @@
         "payload": {
           "hook_event_name": "PermissionRequest",
           "session_id": "4",
-          "turn_id": "turn"
+          "turn_id": "turn",
+          "tool_name": "Bash",
+          "tool_input": {
+            "command": "fixture"
+          }
         }
       },
       "expect": {
@@ -127,7 +147,11 @@
         "payload": {
           "hook_event_name": "PermissionRequest",
           "session_id": "5",
-          "turn_id": "turn"
+          "turn_id": "turn",
+          "tool_name": "Bash",
+          "tool_input": {
+            "command": "fixture"
+          }
         }
       },
       "expect": {
@@ -149,7 +173,11 @@
         "payload": {
           "hook_event_name": "PermissionRequest",
           "session_id": "6",
-          "turn_id": "turn"
+          "turn_id": "turn",
+          "tool_name": "Bash",
+          "tool_input": {
+            "command": "fixture"
+          }
         }
       },
       "expect": {
@@ -171,7 +199,11 @@
         "payload": {
           "hook_event_name": "PermissionRequest",
           "session_id": "7",
-          "turn_id": "turn"
+          "turn_id": "turn",
+          "tool_name": "Bash",
+          "tool_input": {
+            "command": "fixture"
+          }
         }
       },
       "expect": {
@@ -193,7 +225,11 @@
         "payload": {
           "hook_event_name": "PermissionRequest",
           "session_id": "8",
-          "turn_id": "turn"
+          "turn_id": "turn",
+          "tool_name": "Bash",
+          "tool_input": {
+            "command": "fixture"
+          }
         }
       },
       "expect": {

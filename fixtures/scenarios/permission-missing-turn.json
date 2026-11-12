@@ -1,0 +1,144 @@
+{
+  "schemaVersion": 1,
+  "id": "permission-missing-turn",
+  "description": "轮次结束后到达的无轮次权限请求显示等待；无轮次的结束事件或新提交可以清除。",
+  "provenance": "synthetic",
+  "sourceVersions": {
+    "codex": "0.165.0-alpha.1.2"
+  },
+  "steps": [
+    {
+      "atMs": 0,
+      "action": {
+        "type": "event",
+        "agent": "codex",
+        "event": "UserPromptSubmit",
+        "id": "1",
+        "payload": {
+          "hook_event_name": "UserPromptSubmit",
+          "session_id": "session",
+          "turn_id": "turn"
+        }
+      },
+      "expect": {
+        "state": "thinking",
+        "certainty": "observed",
+        "dominantAgent": "codex",
+        "pendingCount": 0,
+        "formId": "codex"
+      }
+    },
+    {
+      "atMs": 1,
+      "action": {
+        "type": "event",
+        "agent": "codex",
+        "event": "Stop",
+        "id": "2",
+        "payload": {
+          "hook_event_name": "Stop",
+          "session_id": "session",
+          "turn_id": "turn"
+        }
+      },
+      "expect": {
+        "state": "done",
+        "certainty": "observed",
+        "dominantAgent": "codex",
+        "pendingCount": 0,
+        "formId": "codex"
+      }
+    },
+    {
+      "atMs": 2,
+      "action": {
+        "type": "event",
+        "agent": "codex",
+        "event": "PermissionRequest",
+        "id": "3",
+        "payload": {
+          "hook_event_name": "PermissionRequest",
+          "session_id": "session",
+          "tool_name": "Bash",
+          "tool_input": {
+            "command": "ls"
+          }
+        }
+      },
+      "expect": {
+        "state": "waiting-permission",
+        "certainty": "observed",
+        "dominantAgent": "codex",
+        "pendingCount": 1,
+        "formId": "codex"
+      },
+      "diagnostic": "applied"
+    },
+    {
+      "atMs": 3,
+      "action": {
+        "type": "event",
+        "agent": "codex",
+        "event": "Stop",
+        "id": "4",
+        "payload": {
+          "hook_event_name": "Stop",
+          "session_id": "session"
+        }
+      },
+      "expect": {
+        "state": "done",
+        "certainty": "observed",
+        "dominantAgent": "codex",
+        "pendingCount": 0,
+        "formId": "codex"
+      }
+    },
+    {
+      "atMs": 4,
+      "action": {
+        "type": "event",
+        "agent": "codex",
+        "event": "PermissionRequest",
+        "id": "5",
+        "payload": {
+          "hook_event_name": "PermissionRequest",
+          "session_id": "session",
+          "tool_name": "Bash",
+          "tool_input": {
+            "command": "ls"
+          }
+        }
+      },
+      "expect": {
+        "state": "waiting-permission",
+        "certainty": "observed",
+        "dominantAgent": "codex",
+        "pendingCount": 1,
+        "formId": "codex"
+      },
+      "diagnostic": "applied"
+    },
+    {
+      "atMs": 5,
+      "action": {
+        "type": "event",
+        "agent": "codex",
+        "event": "UserPromptSubmit",
+        "id": "6",
+        "payload": {
+          "hook_event_name": "UserPromptSubmit",
+          "session_id": "session",
+          "turn_id": "next"
+        }
+      },
+      "expect": {
+        "state": "thinking",
+        "certainty": "observed",
+        "dominantAgent": "codex",
+        "pendingCount": 0,
+        "formId": "codex"
+      }
+    }
+  ]
+}

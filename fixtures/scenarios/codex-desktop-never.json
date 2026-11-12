@@ -1,0 +1,85 @@
+{
+  "schemaVersion": 1,
+  "id": "codex-desktop-never",
+  "description": "开启桌面同步但从未收到该会话快照时，hook 请求照常显示等待。",
+  "provenance": "synthetic",
+  "sourceVersions": {
+    "codex": "0.165.0-alpha.1.2"
+  },
+  "codexApprovalSync": true,
+  "steps": [
+    {
+      "atMs": 0,
+      "action": {
+        "type": "event",
+        "agent": "codex",
+        "event": "UserPromptSubmit",
+        "id": "1",
+        "payload": {
+          "hook_event_name": "UserPromptSubmit",
+          "session_id": "session",
+          "turn_id": "turn"
+        }
+      },
+      "expect": {
+        "state": "thinking",
+        "certainty": "observed",
+        "dominantAgent": "codex",
+        "pendingCount": 0,
+        "formId": "codex"
+      }
+    },
+    {
+      "atMs": 1,
+      "action": {
+        "type": "event",
+        "agent": "codex",
+        "event": "PermissionRequest",
+        "id": "2",
+        "payload": {
+          "hook_event_name": "PermissionRequest",
+          "session_id": "session",
+          "turn_id": "turn",
+          "tool_name": "Bash",
+          "tool_input": {
+            "command": "ls"
+          }
+        }
+      },
+      "expect": {
+        "state": "waiting-permission",
+        "certainty": "observed",
+        "dominantAgent": "codex",
+        "pendingCount": 1,
+        "formId": "codex"
+      },
+      "diagnostic": "applied"
+    },
+    {
+      "atMs": 2,
+      "action": {
+        "type": "event",
+        "agent": "codex",
+        "event": "PostToolUse",
+        "id": "3",
+        "payload": {
+          "hook_event_name": "PostToolUse",
+          "session_id": "session",
+          "turn_id": "turn",
+          "tool_use_id": "one",
+          "tool_name": "Bash",
+          "tool_input": {
+            "command": "ls"
+          }
+        }
+      },
+      "expect": {
+        "state": "thinking",
+        "certainty": "observed",
+        "dominantAgent": "codex",
+        "pendingCount": 0,
+        "formId": "codex"
+      }
+    }
+  ]
+}

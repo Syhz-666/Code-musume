@@ -32,6 +32,18 @@ struct Tool {
     name: Option<String>,
     fingerprint: Option<String>,
 }
+/// Whether a live or finished tool could be the subject of an anonymous request. A request
+/// that names its tool but has no input hash matches any input of that tool.
+fn covers(
+    t: &Tool,
+    turn: &Option<String>,
+    name: &Option<String>,
+    fingerprint: &Option<String>,
+) -> bool {
+    t.turn == *turn
+        && t.name == *name
+        && (t.fingerprint == *fingerprint || fingerprint.is_none() && name.is_some())
+}
 #[derive(Debug, Clone)]
 struct Pending {
     turn: Option<String>,
@@ -68,6 +80,14 @@ struct Session {
     background_last: u64,
     degraded: bool,
     codex_approvals: Option<(CodexApprovals, u64)>,
+    /// The desktop once reported this session and then stopped; hook evidence is a fallback.
+    approval_degraded: bool,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexApprovalStatus {
+    pub status: &'static str,
+    pub approvals: Option<CodexApprovals>,
 }
 impl Session {
     fn new(now: u64) -> Self {
@@ -81,28 +101,35 @@ impl Session {
             background_last: now,
             degraded: false,
             codex_approvals: None,
+            approval_degraded: false,
         }
     }
+    // Hook requests and a desktop snapshot describe the same approvals. While a snapshot
+    // exists it is authoritative; hook requests stay recorded so they can take over on loss.
     fn pending(&self) -> usize {
-        self.actors.values().map(|a| a.pending.len()).sum::<usize>()
-            + self.codex_approvals.map_or(0, |(state, _)| state.pending())
+        match self.codex_approvals {
+            Some((state, _)) => state.pending(),
+            None => self.actors.values().map(|a| a.pending.len()).sum(),
+        }
     }
     fn view(&self, now: u64) -> (DisplayState, Certainty, u64) {
-        let pending_since = self
-            .actors
-            .values()
-            .flat_map(|a| &a.pending)
-            .map(|p| p.since)
-            .chain(
-                self.codex_approvals
-                    .filter(|(state, _)| state.pending() > 0)
-                    .map(|(_, since)| since),
-            )
-            .min();
+        let pending_since = match self.codex_approvals {
+            Some((state, since)) => (state.pending() > 0).then_some(since),
+            None => self
+                .actors
+                .values()
+                .flat_map(|a| &a.pending)
+                .map(|p| p.since)
+                .min(),
+        };
         if let Some(since) = pending_since {
             return (
                 DisplayState::WaitingPermission,
-                if now.saturating_sub(since) >= SLEEP_MS || self.ambiguous || self.degraded {
+                if now.saturating_sub(since) >= SLEEP_MS
+                    || self.ambiguous
+                    || self.degraded
+                    || self.approval_degraded
+                {
                     Certainty::Stale
                 } else {
                     Certainty::Observed
@@ -249,27 +276,51 @@ impl Engine {
             .map(|((_, id), _)| id.clone())
             .collect()
     }
-    pub fn codex_approvals(&self) -> BTreeMap<String, Option<CodexApprovals>> {
+    pub fn codex_approvals(&self) -> BTreeMap<String, CodexApprovalStatus> {
         self.sessions
             .iter()
             .filter(|((agent, _), session)| *agent == Agent::Codex && !session.ended)
             .map(|((_, id), session)| {
-                (
-                    short_hash(id),
-                    session.codex_approvals.map(|(state, _)| state),
-                )
+                let approvals = session.codex_approvals.map(|(state, _)| state);
+                let status = if approvals.is_some() {
+                    "observed"
+                } else if session.approval_degraded {
+                    "degraded"
+                } else {
+                    "never"
+                };
+                (short_hash(id), CodexApprovalStatus { status, approvals })
             })
             .collect()
     }
     pub fn update_codex_approvals(&mut self, id: String, next: Option<CodexApprovals>, now: u64) {
+        if !self.codex_approval_sync {
+            return;
+        }
         let Some(session) = self
             .sessions
-            .get_mut(&(Agent::Codex, id))
+            .get_mut(&(Agent::Codex, id.clone()))
             .filter(|s| !s.ended)
         else {
+            self.log(
+                Some(Agent::Codex),
+                "codex-desktop-sync",
+                Some(&id),
+                "unknown-session",
+            );
             return;
         };
+        if next.is_some() {
+            // The desktop observed this session after these hook requests were recorded.
+            for actor in session.actors.values_mut() {
+                actor.pending.retain(|p| p.since > now);
+            }
+            session.approval_degraded = false;
+        } else if session.codex_approvals.is_some() {
+            session.approval_degraded = true;
+        }
         if session.codex_approvals.map(|(state, _)| state) == next {
+            self.tick(now);
             return;
         }
         let since = session
@@ -361,14 +412,7 @@ impl Engine {
                     .sessions
                     .entry(key)
                     .or_insert_with(|| Session::new(now));
-                let outcome = if self.codex_approval_sync
-                    && e.agent == Agent::Codex
-                    && e.kind == Kind::Permission
-                {
-                    "awaiting-desktop-approval-state"
-                } else {
-                    Self::apply(s, &e, now)
-                };
+                let outcome = Self::apply(s, &e, now);
                 if outcome == "applied" {
                     self.last_activity = now;
                 }
@@ -398,6 +442,7 @@ impl Engine {
             s.last = now;
             s.background = 0;
             s.codex_approvals = None;
+            s.approval_degraded = false;
             return "applied";
         }
         if e.kind == Kind::SessionStart {
@@ -473,15 +518,10 @@ impl Engine {
                 for p in &mut a.pending {
                     if p.tool_id.is_none()
                         && p.turn == turn
-                        && p.fingerprint.is_some()
+                        && (p.fingerprint.is_some() || p.name.is_some())
                         && a.tools
                             .values()
-                            .filter(|t| {
-                                !t.terminal
-                                    && t.turn == turn
-                                    && t.name == p.name
-                                    && t.fingerprint == p.fingerprint
-                            })
+                            .filter(|t| !t.terminal && covers(t, &turn, &p.name, &p.fingerprint))
                             .count()
                             > 1
                     {
@@ -502,6 +542,22 @@ impl Engine {
                             && t.turn == turn
                             && t.name == e.tool_name
                             && t.fingerprint == e.fingerprint
+                    })
+                    .count();
+                let named_candidates = a
+                    .tools
+                    .values()
+                    .filter(|t| !t.terminal && covers(t, &turn, &e.tool_name, &None))
+                    .count();
+                let named_requests = a
+                    .pending
+                    .iter()
+                    .filter(|p| {
+                        p.turn == turn
+                            && p.tool_id.is_none()
+                            && p.fingerprint.is_none()
+                            && p.name.is_some()
+                            && p.name == e.tool_name
                     })
                     .count();
                 if a.tools.len() < 256 {
@@ -525,10 +581,18 @@ impl Engine {
                             && match (&p.tool_id, &e.tool_id) {
                                 (Some(a), Some(b)) => a == b,
                                 (Some(_), None) => false,
+                                (None, _) if p.fingerprint.is_none() => {
+                                    // Only the tool name is known: resolve when exactly one
+                                    // such tool and one such request exist in this turn.
+                                    !p.ambiguous
+                                        && p.name.is_some()
+                                        && p.name == e.tool_name
+                                        && named_candidates <= 1
+                                        && named_requests == 1
+                                }
                                 (None, _) => {
                                     !p.ambiguous
                                         && candidates <= 1
-                                        && p.fingerprint.is_some()
                                         && p.fingerprint == e.fingerprint
                                         && p.name == e.tool_name
                                 }
@@ -557,6 +621,37 @@ impl Engine {
                 }
             }
             Kind::Permission => {
+                // A tool approval without any identity can never be resolved by its tool.
+                // Claude permission notifications are identity-free by design and stay.
+                if !e.from_notification
+                    && e.tool_id.is_none()
+                    && e.tool_name.is_none()
+                    && e.fingerprint.is_none()
+                {
+                    return "uncorrelated-permission";
+                }
+                // Requests never carry a tool ID; a late one for a tool that already
+                // finished is matched by name and input hash. Either missing is not
+                // comparable, so it is kept rather than risk dropping a real request.
+                if e.tool_id.is_none() {
+                    if let (Some(_), Some(_)) = (&e.tool_name, &e.fingerprint) {
+                        let same = |t: &&Tool| {
+                            t.turn == turn
+                                && t.name == e.tool_name
+                                && t.fingerprint == e.fingerprint
+                        };
+                        let live = a
+                            .tools
+                            .values()
+                            .filter(same)
+                            .filter(|t| !t.terminal)
+                            .count();
+                        let done = a.tools.values().filter(same).filter(|t| t.terminal).count();
+                        if live == 0 && done > 0 {
+                            return "completed-tool";
+                        }
+                    }
+                }
                 if e.tool_id.is_some()
                     && a.tools
                         .get(&tool_key)
@@ -579,12 +674,7 @@ impl Engine {
                 let ambiguous = e.tool_id.is_none()
                     && a.tools
                         .values()
-                        .filter(|t| {
-                            !t.terminal
-                                && t.turn == turn
-                                && t.name == e.tool_name
-                                && t.fingerprint == e.fingerprint
-                        })
+                        .filter(|t| !t.terminal && covers(t, &turn, &e.tool_name, &e.fingerprint))
                         .count()
                         > 1;
                 if ambiguous {
