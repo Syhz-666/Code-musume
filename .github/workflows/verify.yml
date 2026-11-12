@@ -34,6 +34,49 @@ jobs:
             .test-artifacts/smoke-*/failure-diagnostics.json
             .test-artifacts/smoke-*/pipeline-verification.json
             .test-artifacts/smoke-*/hook-*.json
+  installer:
+    # Builds the real NSIS installer, installs it into a temp directory, edits the user's
+    # hook config, uninstalls, and checks that only our own entries were removed.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      # tauri.release.conf.json sets useLocalToolsDir, so the NSIS download lives here.
+      # A cache miss plus a failed download fails the job on purpose; an always-green
+      # installer check would not protect anything.
+      - uses: actions/cache@v4
+        with:
+          path: target/.tauri
+          key: tauri-tools-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: tauri-tools-${{ runner.os }}-
+      - run: pnpm install --frozen-lockfile
+      - name: Package
+        id: package
+        shell: pwsh
+        run: |
+          $log = pnpm package:windows
+          $log | Write-Output
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $match = $log | Select-String '^SETUP=(.+)$' | Select-Object -Last 1
+          if (-not $match) { throw 'package-windows did not report an installer path' }
+          "setup=$($match.Matches[0].Groups[1].Value)" >> $env:GITHUB_OUTPUT
+      - name: Install, edit, uninstall
+        env:
+          SETUP: ${{ steps.package.outputs.setup }}
+        run: powershell -NoProfile -File tools/test-installer.ps1 -Setup $env:SETUP
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: installer-evidence
+          include-hidden-files: true
+          if-no-files-found: ignore
+          path: .test-artifacts/install-*/result.json
   desktop-ui:
     runs-on: windows-latest
     steps:

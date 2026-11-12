@@ -12,7 +12,11 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Tauri release build failed' }
     }
     $version = (Get-Content -LiteralPath 'apps/pet/src-tauri/tauri.conf.json' -Encoding UTF8 -Raw | ConvertFrom-Json).version
-    $output = Join-Path $repo 'artifacts'
+    $revision = (& git rev-parse --short HEAD)
+    if ($LASTEXITCODE -ne 0 -or -not $revision) { throw 'Cannot read the source revision' }
+    # One directory per version and commit, so older packages are never picked up or hashed.
+    $output = Join-Path $repo ('artifacts/' + $version + '-' + $revision.Trim())
+    if (Test-Path -LiteralPath $output) { Remove-Item -LiteralPath $output -Recurse -Force }
     $stage = Join-Path $output ('code-musume-' + $version + '-windows-x64')
     New-Item -ItemType Directory -Path $stage -Force | Out-Null
     Copy-Item -LiteralPath 'target/release/pet.exe' -Destination (Join-Path $stage 'code-musume.exe') -Force
@@ -21,8 +25,13 @@ try {
     Copy-Item -LiteralPath 'docs/使用说明-2026-10-14.md' -Destination (Join-Path $stage '使用说明.md') -Force
     if (Test-Path -LiteralPath 'LICENSE') { Copy-Item -LiteralPath 'LICENSE' -Destination $stage -Force }
     Compress-Archive -LiteralPath $stage -DestinationPath ($stage + '.zip') -Force
+    $setup = $null
     if (-not $PortableOnly) {
-        Get-ChildItem -LiteralPath 'target/release/bundle/nsis' -Filter '*setup.exe' | ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $output -Force }
+        # The bundle directory can still hold installers from earlier versions.
+        $built = Join-Path $repo ('target/release/bundle/nsis/code-musume_' + $version + '_x64-setup.exe')
+        if (-not (Test-Path -LiteralPath $built)) { throw ('Installer not found: ' + $built) }
+        $setup = Join-Path $output (Split-Path -Leaf $built)
+        Copy-Item -LiteralPath $built -Destination $setup -Force
     }
     $hashes = @(Get-ChildItem -LiteralPath $output -File | Where-Object { $_.Extension -in '.exe','.zip' } | ForEach-Object {
         $stream = [IO.File]::OpenRead($_.FullName)
@@ -32,4 +41,5 @@ try {
     })
     $hashes | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $output 'checksums.json') -Encoding UTF8
     Write-Output ('Packages: ' + $output)
+    if ($setup) { Write-Output ('SETUP=' + $setup) }
 } finally { Pop-Location }

@@ -1,0 +1,97 @@
+name: release
+# Manual only. Publishes the installer that was just installed, edited and uninstalled
+# by tools/test-installer.ps1, built from the commit the tag points to.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to release, e.g. v0.1.0 (create and push it first)
+        required: true
+        type: string
+      prerelease:
+        description: Mark as pre-release
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    env:
+      TAG: ${{ inputs.tag }}
+    steps:
+      # A missing tag fails here instead of releasing the default branch.
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ inputs.tag }}
+      - name: Check tag matches app version
+        shell: pwsh
+        run: |
+          $version = (Get-Content apps/pet/src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          if ($env:TAG -cne "v$version") { throw "Tag $env:TAG does not match app version v$version" }
+          Write-Output "Building $env:TAG from $(git rev-parse HEAD)"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: actions/cache@v4
+        with:
+          path: target/.tauri
+          key: tauri-tools-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: tauri-tools-${{ runner.os }}-
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm verify
+      # Same script as the installer check in verify.yml; no second packaging recipe.
+      - name: Package
+        id: package
+        shell: pwsh
+        run: |
+          $log = pnpm package:windows
+          $log | Write-Output
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $match = $log | Select-String '^SETUP=(.+)$' | Select-Object -Last 1
+          if (-not $match) { throw 'package-windows did not report an installer path' }
+          $setup = $match.Matches[0].Groups[1].Value
+          "setup=$setup" >> $env:GITHUB_OUTPUT
+          "dir=$(Split-Path -Parent $setup)" >> $env:GITHUB_OUTPUT
+      - name: Install, edit, uninstall
+        env:
+          SETUP: ${{ steps.package.outputs.setup }}
+        run: powershell -NoProfile -File tools/test-installer.ps1 -Setup $env:SETUP
+      - name: Confirm tested files are unchanged
+        shell: pwsh
+        env:
+          DIR: ${{ steps.package.outputs.dir }}
+        run: |
+          $expected = Get-Content (Join-Path $env:DIR 'checksums.json') -Raw | ConvertFrom-Json
+          foreach ($entry in @($expected)) {
+            $actual = (Get-FileHash (Join-Path $env:DIR $entry.file) -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actual -ne $entry.sha256) { throw "$($entry.file) changed after packaging" }
+          }
+      - name: Publish
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DIR: ${{ steps.package.outputs.dir }}
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          $files = @(Get-ChildItem $env:DIR -File | Where-Object { $_.Extension -in '.exe', '.zip' -or $_.Name -eq 'checksums.json' } | ForEach-Object FullName)
+          $flags = @('--verify-tag', '--title', "代码娘 $env:TAG", '--notes', "Built from $(git rev-parse HEAD). Unsigned Windows build.")
+          if ($env:PRERELEASE -eq 'true') { $flags += '--prerelease' }
+          gh release create $env:TAG @flags @files
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: release-installer-evidence
+          include-hidden-files: true
+          if-no-files-found: ignore
+          path: .test-artifacts/install-*/result.json
