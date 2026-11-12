@@ -1,0 +1,90 @@
+{
+  "schemaVersion": 1,
+  "id": "codex-desktop-later-hook",
+  "description": "桌面报告无等待后才到达的 hook 请求被保留，桌面失联时可以接管。",
+  "provenance": "synthetic",
+  "sourceVersions": {
+    "codex": "0.165.0-alpha.1.2"
+  },
+  "codexApprovalSync": true,
+  "steps": [
+    {
+      "atMs": 0,
+      "action": {
+        "type": "event",
+        "agent": "codex",
+        "event": "UserPromptSubmit",
+        "id": "1",
+        "payload": {
+          "hook_event_name": "UserPromptSubmit",
+          "session_id": "session",
+          "turn_id": "turn"
+        }
+      },
+      "expect": {
+        "state": "thinking",
+        "certainty": "observed",
+        "dominantAgent": "codex",
+        "pendingCount": 0,
+        "formId": "codex"
+      }
+    },
+    {
+      "atMs": 1,
+      "action": {
+        "type": "approvals",
+        "session": "session",
+        "manual": 0,
+        "humanInput": 0,
+        "automatic": 0
+      },
+      "expect": {
+        "state": "thinking",
+        "certainty": "observed",
+        "dominantAgent": "codex",
+        "pendingCount": 0,
+        "formId": "codex"
+      }
+    },
+    {
+      "atMs": 2,
+      "action": {
+        "type": "event",
+        "agent": "codex",
+        "event": "PermissionRequest",
+        "id": "2",
+        "payload": {
+          "hook_event_name": "PermissionRequest",
+          "session_id": "session",
+          "turn_id": "turn",
+          "tool_name": "Bash",
+          "tool_input": {
+            "command": "ls"
+          }
+        }
+      },
+      "expect": {
+        "state": "thinking",
+        "certainty": "observed",
+        "dominantAgent": "codex",
+        "pendingCount": 0,
+        "formId": "codex"
+      },
+      "diagnostic": "applied"
+    },
+    {
+      "atMs": 3,
+      "action": {
+        "type": "desktop-lost",
+        "session": "session"
+      },
+      "expect": {
+        "state": "waiting-permission",
+        "certainty": "stale",
+        "dominantAgent": "codex",
+        "pendingCount": 1,
+        "formId": "codex"
+      }
+    }
+  ]
+}

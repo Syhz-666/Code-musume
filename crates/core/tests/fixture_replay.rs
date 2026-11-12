@@ -1,6 +1,6 @@
 //! Expectations are reviewed against the state specification, never regenerated from Engine.
 use code_musume_contracts::*;
-use code_musume_core::Engine;
+use code_musume_core::{engine::CodexApprovals, Engine};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::{collections::BTreeMap, fs, path::PathBuf};
@@ -13,6 +13,9 @@ struct Scenario {
     description: String,
     provenance: String,
     source_versions: BTreeMap<String, String>,
+    /// Matches the desktop app, where the native host observes Codex approvals.
+    #[serde(default)]
+    codex_approval_sync: bool,
     steps: Vec<Step>,
 }
 #[derive(Deserialize)]
@@ -42,6 +45,18 @@ enum Action {
         config: Config,
     },
     Reset,
+    /// A Codex desktop snapshot for the raw session ID.
+    #[serde(rename_all = "camelCase")]
+    Approvals {
+        session: String,
+        manual: usize,
+        human_input: usize,
+        automatic: usize,
+    },
+    /// The desktop stopped reporting the session (disconnect or incompatible data).
+    DesktopLost {
+        session: String,
+    },
 }
 fn compare(expected: &Value, actual: &Value, path: &str, errors: &mut Vec<String>) {
     match (expected, actual) {
@@ -84,7 +99,8 @@ fn replay_reviewed_fixtures() {
         ));
         assert!(!scenario.description.is_empty() && !scenario.source_versions.is_empty());
         assert!(!scenario.steps.is_empty());
-        let mut engine = Engine::new("fixture-replay".into(), Config::default());
+        let mut engine = Engine::new("fixture-replay".into(), Config::default())
+            .with_codex_approval_sync(scenario.codex_approval_sync);
         let mut previous = 0;
         let mut checkpoints = vec![];
         for (index, step) in scenario.steps.iter().enumerate() {
@@ -157,6 +173,35 @@ fn replay_reviewed_fixtures() {
                     engine.tick(step.at_ms);
                 }
                 Action::Reset => engine.reset(step.at_ms),
+                Action::Approvals {
+                    session,
+                    manual,
+                    human_input,
+                    automatic,
+                } => {
+                    assert!(
+                        scenario.codex_approval_sync,
+                        "{}: approvals need sync",
+                        scenario.id
+                    );
+                    engine.update_codex_approvals(
+                        session.clone(),
+                        Some(CodexApprovals {
+                            manual: *manual,
+                            human_input: *human_input,
+                            automatic: *automatic,
+                        }),
+                        step.at_ms,
+                    );
+                }
+                Action::DesktopLost { session } => {
+                    assert!(
+                        scenario.codex_approval_sync,
+                        "{}: desktop-lost needs sync",
+                        scenario.id
+                    );
+                    engine.update_codex_approvals(session.clone(), None, step.at_ms);
+                }
             }
             let actual = serde_json::to_value(engine.snapshot()).unwrap();
             let mut errors = vec![];

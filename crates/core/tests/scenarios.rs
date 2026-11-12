@@ -52,7 +52,7 @@ fn codex_desktop_approvals_do_not_clear_other_sources_or_create_sessions() {
             "PermissionRequest",
             "same",
             "a",
-            json!({}),
+            json!({"tool_name":"Bash","tool_input":{"command":"fixture"}}),
             "1",
         ),
         1,
@@ -74,13 +74,15 @@ fn codex_desktop_approvals_do_not_clear_other_sources_or_create_sessions() {
             "PermissionRequest",
             "same",
             "b",
-            json!({}),
+            json!({"tool_name":"Bash","tool_input":{"command":"fixture"}}),
             "3",
         ),
         3,
     );
-    assert_eq!(e.snapshot().pending_count, 1);
+    // Before any desktop snapshot the Codex hook request counts as fallback evidence.
+    assert_eq!(e.snapshot().pending_count, 2);
     e.update_codex_approvals("same".into(), Some(pending), 4);
+    // One Claude request plus the desktop's count for the Codex session.
     assert_eq!(e.snapshot().pending_count, 2);
     e.ingest(
         event(Agent::Codex, "PostToolUse", "same", "b", json!({}), "4"),
@@ -88,6 +90,7 @@ fn codex_desktop_approvals_do_not_clear_other_sources_or_create_sessions() {
     );
     assert_eq!(e.snapshot().pending_count, 2);
     e.update_codex_approvals("same".into(), None, 6);
+    // The snapshot at 4 superseded the earlier hook request, so it does not come back.
     assert_eq!(e.snapshot().pending_count, 1);
     assert_eq!(e.snapshot().dominant_agent, Some(Agent::ClaudeCode));
     e.ingest(
@@ -97,6 +100,47 @@ fn codex_desktop_approvals_do_not_clear_other_sources_or_create_sessions() {
     assert!(e.codex_sessions().is_empty());
     e.update_codex_approvals("same".into(), Some(pending), 8);
     assert_eq!(e.snapshot().pending_count, 1);
+}
+#[test]
+fn same_codex_session_counts_desktop_and_hook_once() {
+    let mut e = engine().with_codex_approval_sync(true);
+    let identity = json!({"tool_name":"Bash","tool_input":{"command":"fixture"}});
+    e.ingest(
+        event(Agent::Codex, "UserPromptSubmit", "s", "t", json!({}), "1"),
+        0,
+    );
+    e.ingest(
+        event(Agent::Codex, "PermissionRequest", "s", "t", identity, "2"),
+        1,
+    );
+    assert_eq!(e.snapshot().pending_count, 1);
+    let one = CodexApprovals {
+        manual: 1,
+        human_input: 0,
+        automatic: 0,
+    };
+    e.update_codex_approvals("s".into(), Some(one), 2);
+    assert_eq!(e.snapshot().pending_count, 1);
+    e.update_codex_approvals("x".into(), Some(one), 3);
+    assert_eq!(
+        e.diagnostics().last().map(|d| d.outcome.as_str()),
+        Some("unknown-session")
+    );
+}
+#[test]
+fn desktop_updates_are_ignored_without_sync() {
+    let mut e = engine();
+    e.ingest(
+        event(Agent::Codex, "UserPromptSubmit", "s", "t", json!({}), "1"),
+        0,
+    );
+    let one = CodexApprovals {
+        manual: 1,
+        human_input: 0,
+        automatic: 0,
+    };
+    e.update_codex_approvals("s".into(), Some(one), 1);
+    assert_eq!(e.snapshot().pending_count, 0);
 }
 #[test]
 fn two_agents_done_returns_to_other_work() {
@@ -191,7 +235,14 @@ fn stop_and_interrupt_clear_only_their_turn() {
     for name in ["Stop", "Interrupt"] {
         let mut e = engine();
         e.ingest(
-            event(Agent::Codex, "PermissionRequest", "s", "t", json!({}), "1"),
+            event(
+                Agent::Codex,
+                "PermissionRequest",
+                "s",
+                "t",
+                json!({"tool_name":"Bash","tool_input":{"command":"fixture"}}),
+                "1",
+            ),
             0,
         );
         e.ingest(
@@ -200,7 +251,7 @@ fn stop_and_interrupt_clear_only_their_turn() {
                 "PermissionRequest",
                 "s",
                 "t",
-                json!({}),
+                json!({"tool_name":"Bash","tool_input":{"command":"fixture"}}),
                 "2",
             ),
             1,
@@ -307,7 +358,14 @@ fn native_time_drives_hidden_window_state_and_stale_wait_never_vanishes() {
     e.tick(300001);
     assert_eq!(e.snapshot().certainty, Certainty::Unknown);
     e.ingest(
-        event(Agent::Codex, "PermissionRequest", "s", "t", json!({}), "2"),
+        event(
+            Agent::Codex,
+            "PermissionRequest",
+            "s",
+            "t",
+            json!({"tool_name":"Bash","tool_input":{"command":"fixture"}}),
+            "2",
+        ),
         400000,
     );
     e.tick(1_500_000);
@@ -334,7 +392,7 @@ fn all_waiting_sessions_are_protected_from_eviction() {
                 "PermissionRequest",
                 &i.to_string(),
                 "t",
-                json!({}),
+                json!({"tool_name":"Bash","tool_input":{"command":"fixture"}}),
                 &i.to_string(),
             ),
             i,

@@ -1,0 +1,141 @@
+{
+  "schemaVersion": 1,
+  "id": "permission-second-run",
+  "description": "同一轮第二次执行同一命令时的权限请求仍需等待，由第二次执行的完成解除。",
+  "provenance": "synthetic",
+  "sourceVersions": {
+    "codex": "0.165.0-alpha.1.2"
+  },
+  "steps": [
+    {
+      "atMs": 0,
+      "action": {
+        "type": "event",
+        "agent": "codex",
+        "event": "PreToolUse",
+        "id": "1",
+        "payload": {
+          "hook_event_name": "PreToolUse",
+          "session_id": "session",
+          "turn_id": "turn",
+          "tool_use_id": "one",
+          "tool_name": "Bash",
+          "tool_input": {
+            "command": "ls"
+          }
+        }
+      },
+      "expect": {
+        "state": "working",
+        "certainty": "observed",
+        "dominantAgent": "codex",
+        "pendingCount": 0,
+        "formId": "codex"
+      }
+    },
+    {
+      "atMs": 1,
+      "action": {
+        "type": "event",
+        "agent": "codex",
+        "event": "PostToolUse",
+        "id": "2",
+        "payload": {
+          "hook_event_name": "PostToolUse",
+          "session_id": "session",
+          "turn_id": "turn",
+          "tool_use_id": "one",
+          "tool_name": "Bash",
+          "tool_input": {
+            "command": "ls"
+          }
+        }
+      },
+      "expect": {
+        "state": "thinking",
+        "certainty": "observed",
+        "dominantAgent": "codex",
+        "pendingCount": 0,
+        "formId": "codex"
+      }
+    },
+    {
+      "atMs": 2,
+      "action": {
+        "type": "event",
+        "agent": "codex",
+        "event": "PreToolUse",
+        "id": "3",
+        "payload": {
+          "hook_event_name": "PreToolUse",
+          "session_id": "session",
+          "turn_id": "turn",
+          "tool_use_id": "two",
+          "tool_name": "Bash",
+          "tool_input": {
+            "command": "ls"
+          }
+        }
+      },
+      "expect": {
+        "state": "working",
+        "certainty": "observed",
+        "dominantAgent": "codex",
+        "pendingCount": 0,
+        "formId": "codex"
+      }
+    },
+    {
+      "atMs": 3,
+      "action": {
+        "type": "event",
+        "agent": "codex",
+        "event": "PermissionRequest",
+        "id": "4",
+        "payload": {
+          "hook_event_name": "PermissionRequest",
+          "session_id": "session",
+          "turn_id": "turn",
+          "tool_name": "Bash",
+          "tool_input": {
+            "command": "ls"
+          }
+        }
+      },
+      "expect": {
+        "state": "waiting-permission",
+        "certainty": "observed",
+        "dominantAgent": "codex",
+        "pendingCount": 1,
+        "formId": "codex"
+      },
+      "diagnostic": "applied"
+    },
+    {
+      "atMs": 4,
+      "action": {
+        "type": "event",
+        "agent": "codex",
+        "event": "PostToolUse",
+        "id": "5",
+        "payload": {
+          "hook_event_name": "PostToolUse",
+          "session_id": "session",
+          "turn_id": "turn",
+          "tool_use_id": "two",
+          "tool_name": "Bash",
+          "tool_input": {
+            "command": "ls"
+          }
+        }
+      },
+      "expect": {
+        "state": "thinking",
+        "certainty": "observed",
+        "dominantAgent": "codex",
+        "pendingCount": 0,
+        "formId": "codex"
+      }
+    }
+  ]
+}

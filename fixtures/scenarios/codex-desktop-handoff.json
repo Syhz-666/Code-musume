@@ -1,0 +1,116 @@
+{
+  "schemaVersion": 1,
+  "id": "codex-desktop-handoff",
+  "description": "桌面报告等待后 hook 请求仍被记录；桌面失联时由 hook 接管，并标记为较旧。",
+  "provenance": "synthetic",
+  "sourceVersions": {
+    "codex": "0.165.0-alpha.1.2"
+  },
+  "codexApprovalSync": true,
+  "steps": [
+    {
+      "atMs": 0,
+      "action": {
+        "type": "event",
+        "agent": "codex",
+        "event": "UserPromptSubmit",
+        "id": "1",
+        "payload": {
+          "hook_event_name": "UserPromptSubmit",
+          "session_id": "session",
+          "turn_id": "turn"
+        }
+      },
+      "expect": {
+        "state": "thinking",
+        "certainty": "observed",
+        "dominantAgent": "codex",
+        "pendingCount": 0,
+        "formId": "codex"
+      }
+    },
+    {
+      "atMs": 1,
+      "action": {
+        "type": "approvals",
+        "session": "session",
+        "manual": 1,
+        "humanInput": 0,
+        "automatic": 0
+      },
+      "expect": {
+        "state": "waiting-permission",
+        "certainty": "observed",
+        "dominantAgent": "codex",
+        "pendingCount": 1,
+        "formId": "codex"
+      }
+    },
+    {
+      "atMs": 2,
+      "action": {
+        "type": "event",
+        "agent": "codex",
+        "event": "PermissionRequest",
+        "id": "2",
+        "payload": {
+          "hook_event_name": "PermissionRequest",
+          "session_id": "session",
+          "turn_id": "turn",
+          "tool_name": "Bash",
+          "tool_input": {
+            "command": "ls"
+          }
+        }
+      },
+      "expect": {
+        "state": "waiting-permission",
+        "certainty": "observed",
+        "dominantAgent": "codex",
+        "pendingCount": 1,
+        "formId": "codex"
+      },
+      "diagnostic": "applied"
+    },
+    {
+      "atMs": 3,
+      "action": {
+        "type": "desktop-lost",
+        "session": "session"
+      },
+      "expect": {
+        "state": "waiting-permission",
+        "certainty": "stale",
+        "dominantAgent": "codex",
+        "pendingCount": 1,
+        "formId": "codex"
+      }
+    },
+    {
+      "atMs": 4,
+      "action": {
+        "type": "event",
+        "agent": "codex",
+        "event": "PostToolUse",
+        "id": "3",
+        "payload": {
+          "hook_event_name": "PostToolUse",
+          "session_id": "session",
+          "turn_id": "turn",
+          "tool_use_id": "one",
+          "tool_name": "Bash",
+          "tool_input": {
+            "command": "ls"
+          }
+        }
+      },
+      "expect": {
+        "state": "thinking",
+        "certainty": "observed",
+        "dominantAgent": "codex",
+        "pendingCount": 0,
+        "formId": "codex"
+      }
+    }
+  ]
+}

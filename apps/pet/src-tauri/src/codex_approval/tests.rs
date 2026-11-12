@@ -137,6 +137,42 @@ fn requires_a_fresh_local_snapshot_after_a_gap_or_owner_loss() {
     );
 }
 
+#[test]
+fn unknown_request_methods_count_as_manual_without_keeping_their_names() {
+    let mut observer = Observer::default();
+    observer.streams.insert("local-thread".into(), None);
+    assert_change(
+        observer.frame(&snapshot(
+            "local-thread",
+            1,
+            json!({"requests":[{"method":"item/secretNewThing/requestApproval"}],"turns":[]}),
+        )),
+        Some(state(1, 0, 0)),
+    );
+    let stored = &observer.streams["local-thread"].as_ref().unwrap().state;
+    assert!(!stored.to_string().contains("secretNewThing"));
+}
+
+#[test]
+fn rejected_frames_are_counted_before_the_first_snapshot() {
+    let mut observer = Observer::default();
+    observer.streams.insert("local-thread".into(), None);
+    let mut incompatible = snapshot("local-thread", 1, json!({"requests":[],"turns":[]}));
+    incompatible["version"] = json!(SYNC_VERSION + 1);
+    assert!(observer.frame(&incompatible).is_empty());
+    assert!(observer
+        .frame(&snapshot("local-thread", 2, json!({"turns":[]})))
+        .is_empty());
+    assert!(
+        observer.rejected
+            == Rejections {
+                version: 1,
+                shape: 1,
+                revision: 0
+            }
+    );
+}
+
 async fn read_peer(server: &mut NamedPipeServer) -> Value {
     let len = server.read_u32_le().await.unwrap() as usize;
     let mut frame = vec![0; len];
@@ -165,7 +201,12 @@ fn hook(event: &str) -> EnvelopeV2 {
             cli: "test".into(),
             pid: 1,
         },
-        payload: json!({"session_id":"local-thread","turn_id":"turn"}).to_string(),
+        payload: if event == "PermissionRequest" {
+            json!({"session_id":"local-thread","turn_id":"turn","tool_name":"Bash","tool_input":{"command":"fixture"}})
+        } else {
+            json!({"session_id":"local-thread","turn_id":"turn"})
+        }
+        .to_string(),
         parse_error: None,
     }
 }
@@ -182,7 +223,8 @@ fn named_pipe_delivery_drives_the_core_and_disconnect_clears_pending() {
             let mut server = ServerOptions::new().first_pipe_instance(true).create(&path).unwrap();
             let (_subscriptions, wanted) = watch::channel(vec!["local-thread".into()]);
             let (tx, mut updates) = mpsc::channel(8);
-            let client = tokio::spawn(async move { observe(&path, wanted, tx).await });
+            let (rejections, _rejected) = watch::channel(Rejections::default());
+            let client = tokio::spawn(async move { observe(&path, wanted, tx, rejections).await });
             server.connect().await.unwrap();
             let init = read_peer(&mut server).await;
             assert_eq!(init["method"], "initialize");
@@ -198,7 +240,9 @@ fn named_pipe_delivery_drives_the_core_and_disconnect_clears_pending() {
             let mut engine = Engine::new("test".into(), Config::default()).with_codex_approval_sync(true);
             engine.ingest(hook("UserPromptSubmit"), 0);
             engine.ingest(hook("PermissionRequest"), 1);
-            assert_eq!(engine.snapshot().state, DisplayState::Thinking);
+            // Before the desktop reports this session, the hook request is the only evidence.
+            // The first snapshot below was taken after it and supersedes it.
+            assert_eq!(engine.snapshot().state, DisplayState::WaitingPermission);
             let turn = "turn:private/session~key";
             let sequence = [
                 (snapshot("local-thread", 1, json!({

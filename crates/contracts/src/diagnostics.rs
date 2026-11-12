@@ -52,7 +52,7 @@ pub fn safe_event(event: &str) -> &str {
         "SessionStart" | "SessionEnd" | "UserPromptSubmit" | "PreToolUse" | "PostToolUse"
         | "PostToolUseFailure" | "PermissionRequest" | "PermissionDenied" | "Stop"
         | "StopFailure" | "Interrupt" | "SubagentStart" | "SubagentStop" | "PreCompact"
-        | "PostCompact" | "Notification" | "transport" => event,
+        | "PostCompact" | "Notification" | "transport" | "codex-desktop-sync" => event,
         _ => "other",
     }
 }

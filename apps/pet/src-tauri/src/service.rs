@@ -9,7 +9,7 @@ use axum::{
     Json, Router,
 };
 use code_musume_contracts::*;
-use code_musume_core::{engine::CodexApprovals, Engine};
+use code_musume_core::{engine::CodexApprovalStatus, Engine};
 use code_musume_hook::runtime::{atomic_write, config_dir, runtime_path};
 use std::{
     collections::BTreeMap,
@@ -30,7 +30,7 @@ use tokio::sync::{mpsc, oneshot, watch};
 type Inspection = (
     Projection,
     Vec<Diagnostic>,
-    BTreeMap<String, Option<CodexApprovals>>,
+    BTreeMap<String, CodexApprovalStatus>,
 );
 
 enum Message {
@@ -91,6 +91,8 @@ pub struct Native {
     pub animation_preview: Mutex<super::animation_preview::PreviewController>,
     pipeline: Mutex<PipelineDiagnostics>,
     codex_approval_sync: bool,
+    #[cfg(windows)]
+    approval_rejections: watch::Receiver<super::codex_approval::Rejections>,
     clock: Clock,
 }
 impl Native {
@@ -110,6 +112,10 @@ impl Native {
         let pipeline = self.pipeline.lock().unwrap().snapshot();
         let preview = self.animation_preview.lock().unwrap().snapshot();
         let receipt = self.render_receipts.lock().unwrap().latest.clone();
+        #[cfg(windows)]
+        let rejected = serde_json::to_value(*self.approval_rejections.borrow()).unwrap_or_default();
+        #[cfg(not(windows))]
+        let rejected = serde_json::Value::Null;
         Ok(serde_json::json!({
             "v": 2, "appVersion": self.runtime.app_version,
             "instanceId": self.runtime.instance_id, "capturedAtMs": self.clock.now(),
@@ -118,7 +124,7 @@ impl Native {
                 "limitEntries": MAX_QUEUE_ENTRIES, "limitBytes": MAX_QUEUE_BYTES, "unprocessedLoss": self.lost.load(Ordering::SeqCst)},
             "projection": projection, "coreDiagnostics": diagnostics,
             "pipeline": pipeline, "preview": preview, "renderReceipt": receipt,
-            "codexApprovalSync": {"enabled": self.codex_approval_sync, "sessions": approvals},
+            "codexApprovalSync": {"enabled": self.codex_approval_sync, "sessions": approvals, "rejected": rejected},
         }))
     }
     pub fn start(app: Option<AppHandle>, mode: &str) -> Result<Arc<Self>, String> {
@@ -190,9 +196,11 @@ impl Native {
         let (approval_updates, mut approvals) = mpsc::channel(MAX_QUEUE_ENTRIES);
         let codex_approval_sync = approval_pipe.is_some();
         #[cfg(windows)]
+        let (rejections, approval_rejections) = watch::channel(Default::default());
+        #[cfg(windows)]
         if let Some(path) = approval_pipe.map(str::to_owned) {
             tauri::async_runtime::spawn(async move {
-                super::codex_approval::observe(&path, wanted, approval_updates).await;
+                super::codex_approval::observe(&path, wanted, approval_updates, rejections).await;
             });
         }
         #[cfg(not(windows))]
@@ -210,6 +218,8 @@ impl Native {
             tx,
             pipeline: Mutex::new(PipelineDiagnostics::default()),
             codex_approval_sync,
+            #[cfg(windows)]
+            approval_rejections,
             bytes: AtomicUsize::new(0),
             lost: AtomicU64::new(0),
             config: Mutex::new(config.clone()),

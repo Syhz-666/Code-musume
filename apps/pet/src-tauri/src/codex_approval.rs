@@ -124,6 +124,9 @@ impl Shape {
             | (Self::TurnStatus, Some("completed" | "failed" | "interrupted" | "cancelled")) => {
                 value.clone()
             }
+            // A request method added by a newer desktop still means someone has to act.
+            // Count it without keeping its name.
+            (Self::Method, Some(method)) if !method.is_empty() => Value::String("other".into()),
             (Self::Blocking, _) if value.is_boolean() => value.clone(),
             _ => Value::Null,
         }
@@ -222,6 +225,24 @@ fn counts(state: &Value) -> Option<CodexApprovals> {
     Some(result)
 }
 
+/// Frames the observer could not use, by reason. Counts only, no content.
+#[derive(Clone, Copy, Default, PartialEq, Eq, serde::Serialize)]
+pub struct Rejections {
+    pub version: u64,
+    pub shape: u64,
+    pub revision: u64,
+}
+
+impl Rejections {
+    fn plus(self, other: Self) -> Self {
+        Self {
+            version: self.version + other.version,
+            shape: self.shape + other.shape,
+            revision: self.revision + other.revision,
+        }
+    }
+}
+
 struct Stream {
     owner: String,
     revision: u64,
@@ -232,6 +253,7 @@ struct Stream {
 #[derive(Default)]
 struct Observer {
     streams: BTreeMap<String, Option<Stream>>,
+    rejected: Rejections,
 }
 
 enum Observation {
@@ -287,10 +309,14 @@ impl Observer {
                 vec![]
             }
         };
+        // Count rejections even before the first snapshot, so an incompatible desktop
+        // is visible in diagnostics rather than looking like an idle connection.
         if msg["version"] != SYNC_VERSION {
+            self.rejected.version += 1;
             return invalidate(current, false);
         }
         let Some(revision) = change["revision"].as_u64() else {
+            self.rejected.shape += 1;
             return invalidate(current, false);
         };
         match change["type"].as_str() {
@@ -300,6 +326,7 @@ impl Observer {
                 }
                 let state = Shape::Root.redact(&change["conversationState"]);
                 let Some(counts) = counts(&state) else {
+                    self.rejected.shape += 1;
                     return invalidate(current, false);
                 };
                 *current = Some(Stream {
@@ -317,24 +344,31 @@ impl Observer {
                     return vec![];
                 }
                 if change["baseRevision"].as_u64() != Some(stream.revision) {
+                    self.rejected.revision += 1;
                     return invalidate(current, true);
                 }
                 let Some(patches) = change["patches"].as_array() else {
+                    self.rejected.shape += 1;
                     return invalidate(current, true);
                 };
                 if patches
                     .iter()
                     .any(|patch| apply(&mut stream.state, patch).is_none())
                 {
+                    self.rejected.shape += 1;
                     return invalidate(current, true);
                 }
                 let Some(counts) = counts(&stream.state) else {
+                    self.rejected.shape += 1;
                     return invalidate(current, true);
                 };
                 stream.revision = revision;
                 stream.counts = counts;
             }
-            _ => return invalidate(current, false),
+            _ => {
+                self.rejected.shape += 1;
+                return invalidate(current, false);
+            }
         }
         let next = current.as_ref().map(|stream| stream.counts);
         if previous == next {
@@ -421,7 +455,9 @@ async fn connected(
     mut pipe: NamedPipeClient,
     wanted: &mut watch::Receiver<Vec<String>>,
     updates: &mpsc::Sender<Update>,
+    rejections: &watch::Sender<Rejections>,
 ) -> io::Result<()> {
+    let base = *rejections.borrow();
     let init = uuid::Uuid::new_v4().to_string();
     send(
         &mut pipe,
@@ -453,7 +489,12 @@ async fn connected(
                             sync(&mut pipe, id, &mut observer, &ids).await?;
                         }
                     } else if let Some(client) = &client {
-                        for event in observer.frame(&msg) {
+                        let before = observer.rejected;
+                        let events = observer.frame(&msg);
+                        if observer.rejected != before {
+                            rejections.send_replace(base.plus(observer.rejected));
+                        }
+                        for event in events {
                             match event {
                                 Observation::Changed(update) => {
                                     if updates.send(update).await.is_err() { return Ok(()) }
@@ -485,6 +526,7 @@ pub async fn observe(
     path: &str,
     mut wanted: watch::Receiver<Vec<String>>,
     updates: mpsc::Sender<Update>,
+    rejections: watch::Sender<Rejections>,
 ) {
     loop {
         if wanted.wait_for(|ids| !ids.is_empty()).await.is_err() {
@@ -493,7 +535,7 @@ pub async fn observe(
         // Tokio's default named-pipe QoS is SECURITY_IDENTIFICATION. The server
         // can identify this client but cannot impersonate it.
         if let Ok(pipe) = ClientOptions::new().open(path) {
-            let _ = connected(pipe, &mut wanted, &updates).await;
+            let _ = connected(pipe, &mut wanted, &updates, &rejections).await;
             let ids = wanted.borrow().clone();
             for id in ids {
                 if updates.send((id, None)).await.is_err() {
