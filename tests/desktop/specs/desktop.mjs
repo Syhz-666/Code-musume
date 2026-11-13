@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
 import { join } from "node:path";
 import { PNG } from "pngjs";
 import { assertEntryTiming, observePreviewEntry } from "../animation-observation.mjs";
@@ -106,6 +107,76 @@ describe("Actual desktop event chain and settings", () => {
       await pet({ state: "idle" });
     });
   }
+  it("configures banter and displays only the active work summary in both renderers", async () => {
+    const requests = [];
+    const mock = createServer(async (req, res) => {
+      const chunks = [];
+      for await (const chunk of req) chunks.push(chunk);
+      requests.push(JSON.parse(Buffer.concat(chunks).toString()));
+      res.setHeader("content-type", "application/json");
+      res.end(
+        JSON.stringify({
+          choices: [{ finish_reason: "stop", message: { content: "登录测试过啦。" } }],
+          usage: {
+            prompt_tokens: 64,
+            completion_tokens: 7,
+            prompt_tokens_details: { cached_tokens: 16 },
+          },
+        }),
+      );
+    });
+    await new Promise((resolve) => mock.listen(0, "127.0.0.1", resolve));
+    try {
+      await tab("使用偏好");
+      await (await browser.$('[data-testid="open-banter"]')).click();
+      const panel = await browser.$('[data-testid="banter-settings"]');
+      await panel.waitForDisplayed();
+      const input = await panel.$$("input");
+      assert.equal(await input[0].isSelected(), false);
+      await input[0].click();
+      await input[1].setValue(`http://127.0.0.1:${mock.address().port}/v1`);
+      await input[2].setValue("mock-model");
+      await input[3].setValue("synthetic-key");
+      await input[4].setValue("小蓝");
+      await (await panel.$("button=保存")).click();
+      await browser.waitUntil(async () => (await panel.getText()).includes("已保存"));
+      for (const renderer of ["pixi", "dom"]) {
+        await selectWindow("settings");
+        await nativeInvoke("reset_sessions");
+        await nativeInvoke("set_config", { config: { ...initialConfig, renderer } });
+        await nativeInvoke("e2e_advance_clock", { ms: 30_001 });
+        await hook(cc, "UserPromptSubmit");
+        await pet({ state: "thinking", renderer });
+        await nativeInvoke("e2e_banter_fixture", {
+          progress: {
+            agent: cc,
+            session: "ui-session",
+            turn: "ui-turn",
+            id: `progress-${renderer}`,
+            text: "登录测试已通过，正在检查设置。",
+          },
+        });
+        const bubble = await browser.$('.bubble[data-kind="banter"]');
+        await bubble.waitForDisplayed();
+        assert.equal(await bubble.getText(), "登录测试过啦。");
+        await selectWindow("settings");
+        await nativeInvoke("e2e_recreate_pet");
+        await pet({ state: "thinking", renderer }, { prepare: false });
+        await (await browser.$('.bubble[data-kind="banter"]')).waitForDisplayed();
+        await hook(cc, "PermissionRequest", { tool_use_id: "fixture" });
+        await pet({ state: "waiting-permission", pending: 1 });
+        assert.equal(await (await browser.$(".bubble")).getAttribute("data-kind"), "status");
+      }
+      assert.equal(requests.length, 2);
+      assert.match(requests[0].messages.at(-1).content, /登录测试已通过/);
+    } finally {
+      await selectWindow("settings");
+      const { config } = await nativeInvoke("get_banter_status");
+      await nativeInvoke("save_banter", { config, key: null, deleteKey: true });
+      mock.closeAllConnections();
+      await new Promise((resolve) => mock.close(resolve));
+    }
+  });
   it("plays the approved idle atlas across rows and loops, including manual preview and reduced motion", async () => {
     for (const renderer of ["pixi", "dom"]) {
       await selectWindow("settings");

@@ -366,3 +366,24 @@ footer {
     padding: 9px 12px;
   }
 }
+.banter-fields {
+  border: 0;
+  padding: 0;
+  margin: 12px 0;
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.banter-fields label {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.banter-fields input:not([type="checkbox"]) {
+  flex: 1;
+  min-width: 120px;
+}
+.banter-endpoint {
+  overflow-wrap: anywhere;
+}

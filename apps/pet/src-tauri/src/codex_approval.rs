@@ -1,4 +1,5 @@
 //! Read-only observer of the desktop's local thread sync protocol.
+use code_musume_contracts::{Agent, VisibleProgress};
 use code_musume_core::engine::CodexApprovals;
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
@@ -36,6 +37,10 @@ enum Shape {
     ItemType,
     ReviewStatus,
     TurnStatus,
+    Id,
+    Phase,
+    Text,
+    Completion,
 }
 
 impl Shape {
@@ -65,11 +70,23 @@ impl Shape {
         }
     }
 
-    fn child(self, key: &Value) -> Option<Self> {
+    fn child(self, key: &Value, progress: bool) -> Option<Self> {
         if let Some(element) = self.element() {
             return (key.is_u64() || key.as_str() == Some("-")).then_some(element);
         }
         let key = key.as_str()?;
+        if progress {
+            let field = match (self, key) {
+                (Self::Turn, "turnId") | (Self::Item, "id") => Some(Self::Id),
+                (Self::Item, "phase") => Some(Self::Phase),
+                (Self::Item, "text") => Some(Self::Text),
+                (Self::Item, "completedAtMs") => Some(Self::Completion),
+                _ => None,
+            };
+            if field.is_some() {
+                return field;
+            }
+        }
         if matches!(self, Self::Entities) {
             return (!key.is_empty() && key.len() <= 512).then_some(Self::Turn);
         }
@@ -81,13 +98,13 @@ impl Shape {
 
     // Keep array positions for desktop patches, but discard all text, IDs and
     // fields outside the approval schema before retaining a snapshot or delta.
-    fn redact(self, value: &Value) -> Value {
+    fn redact(self, value: &Value, progress: bool) -> Value {
         if matches!(self, Self::Entities) {
             return match value.as_object() {
                 Some(entries) => Value::Object(
                     entries
                         .iter()
-                        .map(|(key, turn)| (entity_key(key), Self::Turn.redact(turn)))
+                        .map(|(key, turn)| (entity_key(key), Self::Turn.redact(turn, progress)))
                         .collect(),
                 ),
                 None => Value::Null,
@@ -95,19 +112,40 @@ impl Shape {
         }
         if let Some(element) = self.element() {
             return match value.as_array() {
-                Some(values) => Value::Array(values.iter().map(|v| element.redact(v)).collect()),
+                Some(values) => {
+                    Value::Array(values.iter().map(|v| element.redact(v, progress)).collect())
+                }
                 None => Value::Null,
             };
         }
         if value.is_object() && !self.fields().is_empty() {
-            return Value::Object(
-                self.fields()
-                    .iter()
-                    .filter_map(|(key, shape)| {
-                        value.get(*key).map(|v| ((*key).into(), shape.redact(v)))
-                    })
-                    .collect::<Map<_, _>>(),
-            );
+            let mut result = self
+                .fields()
+                .iter()
+                .filter_map(|(key, shape)| {
+                    value
+                        .get(*key)
+                        .map(|v| ((*key).into(), shape.redact(v, progress)))
+                })
+                .collect::<Map<_, _>>();
+            if progress {
+                let extra: &[(&str, Self)] = match self {
+                    Self::Turn => &[("turnId", Self::Id)],
+                    Self::Item if value["type"] == "agentMessage" => &[
+                        ("id", Self::Id),
+                        ("phase", Self::Phase),
+                        ("text", Self::Text),
+                        ("completedAtMs", Self::Completion),
+                    ],
+                    _ => &[],
+                };
+                for (key, shape) in extra {
+                    if let Some(val) = value.get(key) {
+                        result.insert((*key).into(), shape.redact(val, true));
+                    }
+                }
+            }
+            return Value::Object(result);
         }
         match (self, value.as_str()) {
             (
@@ -124,6 +162,16 @@ impl Shape {
             | (Self::TurnStatus, Some("completed" | "failed" | "interrupted" | "cancelled")) => {
                 value.clone()
             }
+            (Self::ItemType, Some("agentMessage")) | (Self::TurnStatus, Some("inProgress"))
+                if progress =>
+            {
+                value.clone()
+            }
+            (Self::Id, Some(s)) if s.len() <= 512 => value.clone(),
+            (Self::Phase, Some("commentary" | "final_answer")) => value.clone(),
+            (Self::Text, Some(s)) if s.len() <= 16_000 => value.clone(),
+            (Self::Text, Some(_)) => Value::String("…".repeat(4001)),
+            (Self::Completion, _) if value.is_u64() => value.clone(),
             // A request method added by a newer desktop still means someone has to act.
             // Count it without keeping its name.
             (Self::Method, Some(method)) if !method.is_empty() => Value::String("other".into()),
@@ -137,7 +185,7 @@ fn entity_key(key: &str) -> String {
     format!("{:x}", Sha256::digest(key.as_bytes()))
 }
 
-fn apply(state: &mut Value, patch: &Value) -> Option<()> {
+fn apply(state: &mut Value, patch: &Value, progress: bool) -> Option<()> {
     let path = patch.get("path")?.as_array()?;
     let mut shape = Shape::Root;
     let mut pointer = String::new();
@@ -155,7 +203,7 @@ fn apply(state: &mut Value, patch: &Value) -> Option<()> {
             array.truncate(length);
             return Some(());
         }
-        let Some(child) = shape.child(part) else {
+        let Some(child) = shape.child(part, progress) else {
             return Some(());
         };
         pointer.push('/');
@@ -170,7 +218,16 @@ fn apply(state: &mut Value, patch: &Value) -> Option<()> {
     }
     let op = match patch["op"].as_str()? {
         op @ ("add" | "replace") => {
-            json!({"op":op,"path":pointer,"value":shape.redact(patch.get("value")?)})
+            if matches!(shape, Shape::Text) {
+                let parent = pointer.strip_suffix("/text")?;
+                let item = state.pointer(parent)?;
+                if item["type"] != "agentMessage"
+                    || !matches!(item["phase"].as_str(), Some("commentary" | "final_answer"))
+                {
+                    return Some(());
+                }
+            }
+            json!({"op":op,"path":pointer,"value":shape.redact(patch.get("value")?, progress)})
         }
         "remove" => json!({"op":"remove","path":pointer}),
         _ => return None,
@@ -248,17 +305,74 @@ struct Stream {
     revision: u64,
     state: Value,
     counts: CodexApprovals,
+    progress: Option<Value>,
 }
 
 #[derive(Default)]
 struct Observer {
     streams: BTreeMap<String, Option<Stream>>,
     rejected: Rejections,
+    capture: bool,
 }
 
 enum Observation {
     Changed(Update),
     Resync(String),
+    Progress(VisibleProgress),
+}
+
+fn visible_messages(state: &mut Value, session: &str, baseline: bool) -> Vec<VisibleProgress> {
+    let turns: Vec<&mut Value> = if state
+        .pointer("/turnHistory/history/entitiesByKey")
+        .is_some()
+    {
+        state
+            .pointer_mut("/turnHistory/history/entitiesByKey")
+            .and_then(Value::as_object_mut)
+            .map(|m| m.values_mut().collect())
+            .unwrap_or_default()
+    } else {
+        state["turns"]
+            .as_array_mut()
+            .map(|a| a.iter_mut().collect())
+            .unwrap_or_default()
+    };
+    let mut output = Vec::new();
+    for turn in turns {
+        let active = turn["status"] == "inProgress";
+        let turn_id = turn["turnId"].as_str().unwrap_or("").to_owned();
+        let Some(items) = turn["items"].as_array_mut() else {
+            continue;
+        };
+        for item in items {
+            let visible = active
+                && !turn_id.is_empty()
+                && item["type"] == "agentMessage"
+                && matches!(item["phase"].as_str(), Some("commentary" | "final_answer"));
+            let complete = item["completedAtMs"].as_u64().is_some();
+            // Keep only an unfinished visible item between frames. A completed baseline
+            // is deliberately discarded; patch/snapshot replays are deduplicated by ID.
+            if !visible || complete {
+                if let Some(fields) = item.as_object_mut() {
+                    let text = fields.get_mut("text").map(Value::take);
+                    if visible && complete && !baseline && output.len() < 32 {
+                        if let (Some(id), Some(Value::String(text))) =
+                            (fields.get("id").and_then(Value::as_str), text)
+                        {
+                            output.push(VisibleProgress {
+                                agent: Agent::Codex,
+                                session: session.into(),
+                                turn: turn_id.clone(),
+                                id: id.into(),
+                                text,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+    output
 }
 
 impl Observer {
@@ -298,6 +412,7 @@ impl Observer {
         }
         let change = &params["change"];
         let previous = current.as_ref().map(|s| s.counts);
+        let mut messages = Vec::new();
         let invalidate = |current: &mut Option<Stream>, retry_now| {
             if current.take().is_some() {
                 let mut updates = vec![Observation::Changed((id.into(), None))];
@@ -321,19 +436,24 @@ impl Observer {
         };
         match change["type"].as_str() {
             Some("snapshot") => {
-                if current.as_ref().is_some_and(|s| revision <= s.revision) {
-                    return vec![];
+                if let Some(stream) = current.as_mut().filter(|s| revision <= s.revision) {
+                    if revision == stream.revision && self.capture && stream.progress.is_none() {
+                        stream.progress = Some(progress_baseline(change, id));
+                    }
+                    return Vec::new();
                 }
-                let state = Shape::Root.redact(&change["conversationState"]);
+                let state = Shape::Root.redact(&change["conversationState"], false);
                 let Some(counts) = counts(&state) else {
                     self.rejected.shape += 1;
                     return invalidate(current, false);
                 };
+                let progress = self.capture.then(|| progress_baseline(change, id));
                 *current = Some(Stream {
                     owner: owner.into(),
                     revision,
                     state,
                     counts,
+                    progress,
                 });
             }
             Some("patches") => {
@@ -353,7 +473,7 @@ impl Observer {
                 };
                 if patches
                     .iter()
-                    .any(|patch| apply(&mut stream.state, patch).is_none())
+                    .any(|patch| apply(&mut stream.state, patch, false).is_none())
                 {
                     self.rejected.shape += 1;
                     return invalidate(current, true);
@@ -364,6 +484,13 @@ impl Observer {
                 };
                 stream.revision = revision;
                 stream.counts = counts;
+                if let Some(progress) = &mut stream.progress {
+                    if patches.iter().all(|p| apply(progress, p, true).is_some()) {
+                        messages = visible_messages(progress, id, false);
+                    } else {
+                        stream.progress = None;
+                    }
+                }
             }
             _ => {
                 self.rejected.shape += 1;
@@ -371,12 +498,24 @@ impl Observer {
             }
         }
         let next = current.as_ref().map(|stream| stream.counts);
-        if previous == next {
-            vec![]
-        } else {
-            vec![Observation::Changed((id.into(), next))]
+        let mut updates: Vec<_> = messages.into_iter().map(Observation::Progress).collect();
+        if change["type"] == "patches"
+            && self.capture
+            && current.as_ref().is_some_and(|s| s.progress.is_none())
+        {
+            updates.push(Observation::Resync(id.into()));
         }
+        if previous != next {
+            updates.push(Observation::Changed((id.into(), next)));
+        }
+        updates
     }
+}
+
+fn progress_baseline(change: &Value, id: &str) -> Value {
+    let mut state = Shape::Root.redact(&change["conversationState"], true);
+    visible_messages(&mut state, id, true);
+    state
 }
 
 async fn send(pipe: &mut NamedPipeClient, msg: Value) -> io::Result<()> {
@@ -456,6 +595,8 @@ async fn connected(
     wanted: &mut watch::Receiver<Vec<String>>,
     updates: &mpsc::Sender<Update>,
     rejections: &watch::Sender<Rejections>,
+    capture: &mut watch::Receiver<Option<u64>>,
+    progress: Option<&mpsc::Sender<(u64, VisibleProgress)>>,
 ) -> io::Result<()> {
     let base = *rejections.borrow();
     let init = uuid::Uuid::new_v4().to_string();
@@ -469,6 +610,8 @@ async fn connected(
     .await?;
     let mut frames = Frames::default();
     let mut observer = Observer::default();
+    let mut generation = *capture.borrow_and_update();
+    observer.capture = generation.is_some();
     let mut client = None::<String>;
     let mut chunk = [0; 16 * 1024];
     let mut retry = interval(RETRY);
@@ -500,7 +643,28 @@ async fn connected(
                                     if updates.send(update).await.is_err() { return Ok(()) }
                                 }
                                 Observation::Resync(id) => follow(&mut pipe, client, &id, true).await?,
+                                Observation::Progress(message) => {
+                                    if let (Some(generation), Some(tx)) = (generation, progress) {
+                                        let _ = tx.try_send((generation, message));
+                                    }
+                                }
                             }
+                        }
+                    }
+                }
+            },
+            changed = capture.changed() => {
+                if changed.is_err() { return Ok(()) }
+                generation = *capture.borrow_and_update();
+                observer.capture = generation.is_some();
+                for stream in observer.streams.values_mut().flatten() {
+                    stream.progress = None;
+                }
+                if let Some(client) = &client {
+                    if observer.capture {
+                        let ids = wanted.borrow().clone();
+                        for id in ids {
+                            follow(&mut pipe, client, &id, true).await?;
                         }
                     }
                 }
@@ -527,6 +691,8 @@ pub async fn observe(
     mut wanted: watch::Receiver<Vec<String>>,
     updates: mpsc::Sender<Update>,
     rejections: watch::Sender<Rejections>,
+    mut capture: watch::Receiver<Option<u64>>,
+    progress: Option<mpsc::Sender<(u64, VisibleProgress)>>,
 ) {
     loop {
         if wanted.wait_for(|ids| !ids.is_empty()).await.is_err() {
@@ -535,7 +701,15 @@ pub async fn observe(
         // Tokio's default named-pipe QoS is SECURITY_IDENTIFICATION. The server
         // can identify this client but cannot impersonate it.
         if let Ok(pipe) = ClientOptions::new().open(path) {
-            let _ = connected(pipe, &mut wanted, &updates, &rejections).await;
+            let _ = connected(
+                pipe,
+                &mut wanted,
+                &updates,
+                &rejections,
+                &mut capture,
+                progress.as_ref(),
+            )
+            .await;
             let ids = wanted.borrow().clone();
             for id in ids {
                 if updates.send((id, None)).await.is_err() {

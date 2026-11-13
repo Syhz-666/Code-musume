@@ -5,6 +5,52 @@ use tokio::net::windows::named_pipe::{NamedPipeServer, ServerOptions};
 
 const MANUAL: &str = "item/commandExecution/requestApproval";
 
+#[test]
+fn captures_only_new_completed_visible_messages_from_local_patches() {
+    let mut observer = Observer {
+        capture: true,
+        ..Default::default()
+    };
+    observer.streams.insert("local-thread".into(), None);
+    let initial = json!({"requests":[],"turnHistory":{"history":{"entitiesByKey":{"current":{
+        "turnId":"turn","status":"inProgress","items":[
+            {"type":"agentMessage","id":"old","phase":"commentary","text":"old content","completedAtMs":1},
+            {"type":"reasoning","id":"hidden","text":"private reasoning","completedAtMs":1},
+            {"type":"agentMessage","id":"new","phase":"commentary","text":"first","completedAtMs":null}
+        ]
+    }}}}});
+    let output = observer.frame(&snapshot("local-thread", 1, initial.clone()));
+    assert!(output
+        .iter()
+        .all(|event| !matches!(event, Observation::Progress(_))));
+    assert!(observer.frame(&delta("local-thread", 1, json!([
+        {"op":"replace","path":["turnHistory","history","entitiesByKey","current","items",2,"text"],"value":"new progress"}
+    ]))).is_empty());
+    let complete = delta(
+        "local-thread",
+        2,
+        json!([
+            {"op":"replace","path":["turnHistory","history","entitiesByKey","current","items",2,"completedAtMs"],"value":2}
+        ]),
+    );
+    let output = observer.frame(&complete);
+    assert!(
+        matches!(&output[..], [Observation::Progress(p)] if p.id == "new" && p.text == "new progress" && p.turn == "turn")
+    );
+    assert!(observer.frame(&complete).is_empty());
+    assert!(observer
+        .frame(&snapshot("local-thread", 4, initial))
+        .is_empty());
+    let stream = observer.streams["local-thread"].as_ref().unwrap();
+    assert!(!stream.state.to_string().contains("first"));
+    assert!(!stream
+        .progress
+        .as_ref()
+        .unwrap()
+        .to_string()
+        .contains("private reasoning"));
+}
+
 fn frame(id: &str, change: Value) -> Value {
     json!({
         "type":"broadcast", "method":"thread-stream-state-changed", "version":11,
@@ -224,7 +270,11 @@ fn named_pipe_delivery_drives_the_core_and_disconnect_clears_pending() {
             let (_subscriptions, wanted) = watch::channel(vec!["local-thread".into()]);
             let (tx, mut updates) = mpsc::channel(8);
             let (rejections, _rejected) = watch::channel(Rejections::default());
-            let client = tokio::spawn(async move { observe(&path, wanted, tx, rejections).await });
+            let (capture, capture_rx) = watch::channel(None);
+            let client = tokio::spawn(async move {
+                let _capture = capture;
+                observe(&path, wanted, tx, rejections, capture_rx, None).await
+            });
             server.connect().await.unwrap();
             let init = read_peer(&mut server).await;
             assert_eq!(init["method"], "initialize");

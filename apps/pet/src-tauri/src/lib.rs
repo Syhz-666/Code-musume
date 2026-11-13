@@ -1,5 +1,9 @@
 mod animation_preview;
+mod banter_api;
+mod banter_credentials;
+mod banter_service;
 mod characters;
+mod claude_progress;
 #[cfg(windows)]
 mod codex_approval;
 #[cfg(feature = "e2e")]
@@ -158,6 +162,60 @@ async fn unsubscribe_projection(
 #[tauri::command]
 async fn get_projection(s: State<'_, Arc<Native>>) -> Result<Projection, String> {
     s.projection().await
+}
+#[tauri::command]
+async fn subscribe_banter(
+    webview: Webview,
+    s: State<'_, Arc<Native>>,
+    on_update: JavaScriptChannelId,
+    subscription_id: String,
+) -> Result<BanterProjection, String> {
+    s.banter_subscribe(webview, subscription_id, on_update)
+        .await
+}
+#[tauri::command]
+async fn unsubscribe_banter(
+    window: WebviewWindow,
+    s: State<'_, Arc<Native>>,
+    subscription_id: String,
+) -> Result<(), String> {
+    s.banter_unsubscribe(format!("{}:{subscription_id}", window.label()))
+        .await;
+    Ok(())
+}
+#[tauri::command]
+async fn get_banter_projection(s: State<'_, Arc<Native>>) -> Result<BanterProjection, String> {
+    s.banter_projection().await
+}
+#[tauri::command]
+async fn get_banter_status(s: State<'_, Arc<Native>>) -> Result<BanterStatus, String> {
+    s.banter_status().await
+}
+#[cfg(feature = "e2e")]
+#[tauri::command]
+async fn e2e_banter_fixture(
+    s: State<'_, Arc<Native>>,
+    progress: VisibleProgress,
+) -> Result<(), String> {
+    s.banter_fixture(progress).await
+}
+#[tauri::command]
+async fn save_banter(
+    s: State<'_, Arc<Native>>,
+    config: BanterConfig,
+    key: Option<String>,
+    delete_key: bool,
+) -> Result<BanterStatus, String> {
+    s.banter_save(config, key, delete_key).await
+}
+#[tauri::command]
+async fn probe_banter(
+    s: State<'_, Arc<Native>>,
+    config: BanterConfig,
+    key: Option<String>,
+    preview: bool,
+) -> Result<String, String> {
+    s.banter_probe(config, key, preview).await
 }
 #[tauri::command]
 fn get_config(s: State<'_, Arc<Native>>) -> Config {
@@ -511,6 +569,14 @@ pub fn run() {
             show_pet_menu,
             quit_app,
             subscribe_projection,
+            subscribe_banter,
+            unsubscribe_banter,
+            get_banter_projection,
+            get_banter_status,
+            #[cfg(feature = "e2e")]
+            e2e_banter_fixture,
+            save_banter,
+            probe_banter,
             unsubscribe_projection,
             get_projection,
             get_config,

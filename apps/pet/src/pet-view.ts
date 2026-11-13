@@ -1,3 +1,4 @@
+import type { BanterProjection } from "@code-musume/protocol";
 import {
   type AnimationPreview,
   type CharacterForm,
@@ -10,7 +11,14 @@ import {
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Application, Container, Graphics, Rectangle, Sprite, Texture } from "pixi.js";
-import { invoke, isTauri, preview, watchAnimationPreview, watchProjection } from "./bridge";
+import {
+  invoke,
+  isTauri,
+  preview,
+  watchAnimationPreview,
+  watchBanter,
+  watchProjection,
+} from "./bridge";
 import { builtinAssetUrl, builtinManifest } from "./builtin-character";
 import { spriteFramePosition } from "./sprite-layout";
 import { SpritePlayback } from "./sprite-playback";
@@ -343,6 +351,25 @@ function submitReceipt() {
   });
 }
 const hostNode = host;
+let banter: BanterProjection | undefined;
+function updateBubble() {
+  const p = current;
+  const summary =
+    banter?.instanceId === p.instanceId &&
+    banter.agent === p.dominantAgent &&
+    banter.sessionLabel === p.sessionLabel &&
+    p.certainty !== "unknown" &&
+    (p.state === "working" || p.state === "thinking") &&
+    !manualPreviewActive()
+      ? banter.text
+      : null;
+  const status =
+    p.bubbleKey === "uncertain" ? "暂时没有新消息" : p.bubbleKey ? STATE_LABELS[p.state] : "";
+  const text = status || summary || "";
+  bubbleNode.textContent = text;
+  bubbleNode.dataset.kind = status ? "status" : summary ? "banter" : "";
+  bubbleNode.classList.toggle("shown", Boolean(text));
+}
 function apply(p: Projection) {
   const changed = p.characterId !== current.characterId || p.formId !== current.formId;
   current = p;
@@ -369,9 +396,7 @@ function apply(p: Projection) {
         : isTauri()
           ? "代码娘"
           : "界面预览";
-  bubbleNode.textContent =
-    p.bubbleKey === "uncertain" ? "暂时没有新消息" : p.bubbleKey ? STATE_LABELS[p.state] : "";
-  bubbleNode.classList.toggle("shown", !!p.bubbleKey);
+  updateBubble();
   stageNode.dataset.state = displayedState();
   if (body) body.tint = color();
   if (hand) hand.tint = color();
@@ -554,6 +579,10 @@ async function main() {
   }
   const stopAnimationPreview = await watchAnimationPreview(applyAnimationPreview);
   const stop = await watchProjection(apply);
+  const stopBanter = await watchBanter((snapshot) => {
+    banter = snapshot;
+    updateBubble();
+  }).catch(() => () => {});
   if (characterLoad) await characterLoad;
   else await loadCharacter(current);
   apply(current);
@@ -586,6 +615,7 @@ async function main() {
       wakeDOM = () => {};
       stop();
       stopAnimationPreview();
+      stopBanter();
       app?.destroy(true);
       for (const atlas of atlases.values()) atlas.texture?.destroy(true);
     },

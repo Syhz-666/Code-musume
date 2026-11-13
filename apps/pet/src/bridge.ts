@@ -1,6 +1,7 @@
 import {
   type AnimationPreview,
   AnimationPreviewStore,
+  type BanterProjection,
   DEFAULT_ANIMATION_PREVIEW,
   type Projection,
   ProjectionStore,
@@ -9,6 +10,25 @@ import { Channel, invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
 export { invoke, isTauri };
+export async function watchBanter(callback: (p: BanterProjection) => void): Promise<() => void> {
+  if (!isTauri()) return () => {};
+  const subscriptionId = crypto.randomUUID();
+  const channel = new Channel<BanterProjection>();
+  let revision = -1;
+  let stopped = false;
+  const accept = (p: BanterProjection) => {
+    if (!stopped && p.revision > revision) {
+      revision = p.revision;
+      callback(p);
+    }
+  };
+  channel.onmessage = accept;
+  accept(await invoke<BanterProjection>("subscribe_banter", { onUpdate: channel, subscriptionId }));
+  return () => {
+    stopped = true;
+    void invoke("unsubscribe_banter", { subscriptionId }).catch(() => {});
+  };
+}
 export async function watchAnimationPreview(
   callback: (p: AnimationPreview) => void,
 ): Promise<() => void> {

@@ -31,7 +31,12 @@ fn main() {
         CharacterForm,
         CharacterManifest,
         InstallPreview,
-        HookStatus
+        HookStatus,
+        BanterProtocol,
+        BanterConfig,
+        BanterProjection,
+        BanterUsage,
+        BanterStatus
     );
     if let Some(parent) = target.parent() {
         fs::create_dir_all(parent).unwrap();

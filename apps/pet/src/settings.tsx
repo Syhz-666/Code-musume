@@ -12,6 +12,7 @@ import {
 } from "@code-musume/protocol";
 import { StrictMode, useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { BanterSettings } from "./banter-settings";
 import { invoke, isTauri, preview, watchAnimationPreview, watchProjection } from "./bridge";
 import { builtinManifest } from "./builtin-character";
 import "./settings.css";
@@ -624,6 +625,19 @@ function Settings() {
               保存使用偏好
             </button>
           </section>
+          <section className="panel">
+            <button type="button" data-testid="open-banter" onClick={() => setTab("banter")}>
+              工作碎碎念设置
+            </button>
+          </section>
+        </>
+      )}
+      {tab === "banter" && (
+        <>
+          <button type="button" onClick={() => setTab("preferences")}>
+            返回使用偏好
+          </button>
+          {isTauri() ? <BanterSettings /> : <p>请在桌宠应用中打开设置。</p>}
         </>
       )}
       {tab === "diagnostics" && (

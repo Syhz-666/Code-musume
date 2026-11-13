@@ -139,7 +139,7 @@ async function sendHookAttempt({ agent, event, eventId, input, sequence, attempt
   const started = performance.now();
   return new Promise((ok, reject) => {
     const child = spawn(
-      join(root, "target/debug/code-musume-hook.exe"),
+      join(root, "target/e2e/debug/code-musume-hook.exe"),
       [
         "--agent",
         agent,
