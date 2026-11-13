@@ -265,6 +265,31 @@ impl Engine {
     pub fn snapshot(&self) -> Projection {
         self.projection.clone()
     }
+    pub fn active_turn(&self, agent: Agent, id: &str) -> Option<&str> {
+        let actor = self
+            .sessions
+            .get(&(agent, id.to_owned()))?
+            .actors
+            .get("@main")?;
+        actor.active.then_some(actor.turn.as_deref()).flatten()
+    }
+    pub fn tracked_sessions(&self) -> impl Iterator<Item = &(Agent, String)> {
+        self.sessions.keys()
+    }
+    pub fn banter_target(&self) -> Option<(Agent, &str, &str)> {
+        let (agent, id) = self.dominant.as_ref()?;
+        if self.projection.certainty == Certainty::Unknown
+            || self.sessions.get(&(*agent, id.clone()))?.degraded
+            || !matches!(
+                self.projection.state,
+                DisplayState::Working | DisplayState::Thinking
+            )
+            || self.projection.bubble_key.is_some()
+        {
+            return None;
+        }
+        Some((*agent, id, self.active_turn(*agent, id)?))
+    }
     pub fn with_codex_approval_sync(mut self, enabled: bool) -> Self {
         self.codex_approval_sync = enabled;
         self

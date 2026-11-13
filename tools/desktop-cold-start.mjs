@@ -112,6 +112,17 @@ async function check(name) {
     assert.equal(config.reducedMotion, true);
     assert.equal(config.manualAnimationEnabled, true);
     assert.equal(config.state, undefined);
+    const banterConfig = JSON.parse(readFileSync(join(directory, "config/banter.json"), "utf8"));
+    assert.equal(banterConfig.enabled, false);
+    assert.equal(banterConfig.nickname, "小蓝");
+    assert.equal(banterConfig.model, "mock-model");
+    assert.equal(banterConfig.key, undefined);
+    const banter = await request(port, "POST", `/session/${sessionId}/execute/async`, {
+      script:
+        "const done=arguments[arguments.length-1]; window.__TAURI_INTERNALS__.invoke('get_banter_projection').then(done)",
+      args: [],
+    });
+    assert.equal(banter.text, null);
     const exitVia = "settings";
     await request(port, "POST", `/session/${sessionId}/execute/sync`, {
       script: "window.__TAURI_INTERNALS__.invoke('show_settings'); return true",

@@ -33,8 +33,10 @@ tokio = { version = "1", features = ["net", "sync", "time"] }
 subtle = "2"
 base64 = "0.22"
 image = { version = "0.25", default-features = false, features = ["png", "webp"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "native-tls"] }
+httpdate = "1"
 
 [target.'cfg(windows)'.dependencies]
 json-patch = "4.2"
 tokio = { version = "1", features = ["io-util"] }
-windows-sys = { version = "0.61", features = ["Win32_UI_WindowsAndMessaging", "Win32_Graphics_Gdi", "Win32_Foundation", "Win32_System_Registry", "Win32_Security"] }
+windows-sys = { version = "0.61", features = ["Win32_UI_WindowsAndMessaging", "Win32_Graphics_Gdi", "Win32_Foundation", "Win32_System_Registry", "Win32_Security", "Win32_Security_Credentials"] }

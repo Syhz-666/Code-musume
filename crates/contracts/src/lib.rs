@@ -1,7 +1,9 @@
 //! Shared wire contracts. Work semantics live exclusively in code-musume-core.
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+mod banter;
 pub mod diagnostics;
+pub use banter::*;
 
 pub const PROTOCOL_VERSION: u32 = 2;
 pub const MAX_INPUT_BYTES: usize = 256 * 1024;

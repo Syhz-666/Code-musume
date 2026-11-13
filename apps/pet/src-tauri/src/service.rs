@@ -43,6 +43,29 @@ enum Message {
     ),
     Unsubscribe(String),
     Get(oneshot::Sender<Projection>),
+    BanterSubscribe(
+        Box<Webview>,
+        String,
+        JavaScriptChannelId,
+        oneshot::Sender<BanterProjection>,
+    ),
+    BanterUnsubscribe(String),
+    BanterGet(oneshot::Sender<BanterProjection>),
+    BanterStatus(oneshot::Sender<BanterStatus>),
+    BanterSave(
+        BanterConfig,
+        Option<String>,
+        bool,
+        oneshot::Sender<Result<BanterStatus, String>>,
+    ),
+    BanterProbe(
+        BanterConfig,
+        Option<String>,
+        bool,
+        oneshot::Sender<Result<String, String>>,
+    ),
+    #[cfg(feature = "e2e")]
+    BanterFixture(VisibleProgress, oneshot::Sender<()>),
     Config(
         Config,
         CharacterManifest,
@@ -194,17 +217,28 @@ impl Native {
         let (tx, mut rx) = mpsc::channel(MAX_QUEUE_ENTRIES);
         let (codex_sessions, wanted) = watch::channel(Vec::new());
         let (approval_updates, mut approvals) = mpsc::channel(MAX_QUEUE_ENTRIES);
+        let (capture, capture_rx) = watch::channel(None);
+        let (progress_tx, mut progress_rx) = mpsc::channel::<(u64, VisibleProgress)>(32);
+        let (outcome_tx, mut outcome_rx) = mpsc::channel(4);
         let codex_approval_sync = approval_pipe.is_some();
         #[cfg(windows)]
         let (rejections, approval_rejections) = watch::channel(Default::default());
         #[cfg(windows)]
         if let Some(path) = approval_pipe.map(str::to_owned) {
             tauri::async_runtime::spawn(async move {
-                super::codex_approval::observe(&path, wanted, approval_updates, rejections).await;
+                super::codex_approval::observe(
+                    &path,
+                    wanted,
+                    approval_updates,
+                    rejections,
+                    capture_rx,
+                    Some(progress_tx),
+                )
+                .await;
             });
         }
         #[cfg(not(windows))]
-        drop((wanted, approval_updates));
+        drop((wanted, approval_updates, capture_rx, progress_tx));
         let native = Arc::new(Self {
             clock: Clock {
                 start: Instant::now(),
@@ -230,12 +264,20 @@ impl Native {
         });
         let state = native.clone();
         let instance = native.runtime.instance_id.clone();
+        let mode = mode.to_owned();
         tauri::async_runtime::spawn(async move {
+            let mut banter =
+                super::banter_service::Service::new(instance.clone(), &mode, capture, outcome_tx);
             let mut engine =
                 Engine::new(instance, config).with_codex_approval_sync(codex_approval_sync);
             engine.character_forms = character.agent_forms;
             engine.default_form = character.default_form;
             let mut subscribers: BTreeMap<String, Channel<Projection>> = BTreeMap::new();
+            let mut banter_subscribers: BTreeMap<String, Channel<BanterProjection>> =
+                BTreeMap::new();
+            let mut last_banter = 0;
+            let mut probe_active = false;
+            let (probe_done, mut probe_finished) = mpsc::channel(1);
             let mut last_broadcast = 0;
             let mut timer = tokio::time::interval(Duration::from_millis(250));
             let mut position_dirty = false;
@@ -245,13 +287,15 @@ impl Native {
             loop {
                 let now = state.clock.now();
                 let mut received = None;
+                let mut dispatch_banter = false;
                 tokio::select! {
                     msg=rx.recv()=>match msg{
                         Some(Message::Event(e,size,at))=>{
                             received=Some(at);state.bytes.fetch_sub(size,Ordering::SeqCst);
                             let mut trace=PipelineTrace::event("core","processed",&e);
                             trace.before=Some((&engine.snapshot()).into());
-                            engine.ingest(e,state.clock.now());
+                            engine.ingest(e.clone(),state.clock.now());
+                            banter.hook(&e, &engine);
                             if codex_approval_sync {
                                 codex_sessions.send_if_modified(|wanted| {
                                     let next = engine.codex_sessions();
@@ -277,6 +321,45 @@ impl Native {
                             let _ = reply.send(engine.snapshot());
                         },
                         Some(Message::Unsubscribe(id))=>{subscribers.remove(&id);},
+                        Some(Message::BanterSubscribe(webview, token, callback, reply)) => {
+                            let label = webview.label();
+                            let id = format!("{label}:{token}");
+                            if !banter_subscribers.contains_key(&id) {
+                                banter_subscribers.retain(|old, _| old.split(':').next() != Some(label));
+                                banter_subscribers.insert(id, callback.channel_on(*webview));
+                            }
+                            let _ = reply.send(banter.core.snapshot());
+                        },
+                        Some(Message::BanterUnsubscribe(id)) => { banter_subscribers.remove(&id); },
+                        Some(Message::BanterGet(reply)) => { let _ = reply.send(banter.core.snapshot()); },
+                        Some(Message::BanterStatus(reply)) => { let _ = reply.send(banter.status()); },
+                        Some(Message::BanterSave(config, key, delete, reply)) => {
+                            let _ = reply.send(banter.save(config, key, delete));
+                        },
+                        Some(Message::BanterProbe(config, key, preview, reply)) => {
+                            if probe_active {
+                                let _ = reply.send(Err("已有连接测试正在运行".into()));
+                            } else {
+                                match banter.test_call(config, key) {
+                                    Ok((client, config, key, generation)) => {
+                                        probe_active = true;
+                                        let sender = probe_done.clone();
+                                        tauri::async_runtime::spawn(async move {
+                                            let result = super::banter_service::probe(client, config.clone(), key).await;
+                                            let update = result.as_ref().ok().map(|(_, usage)| (generation, config, usage.clone()));
+                                            let _ = reply.send(result.map(|(text, _)| if preview { text } else { "连接测试成功".into() }));
+                                            let _ = sender.send(update).await;
+                                        });
+                                    },
+                                    Err(error) => { let _ = reply.send(Err(error)); },
+                                }
+                            }
+                        },
+                        #[cfg(feature = "e2e")]
+                        Some(Message::BanterFixture(p, reply)) => {
+                            banter.progress(banter.generation, &engine, p, state.clock.now());
+                            let _ = reply.send(());
+                        },
                         Some(Message::Get(reply))=>{engine.tick(state.clock.now());let _=reply.send(engine.snapshot());},
                         #[cfg(feature = "e2e")]
                         Some(Message::AdvanceClock(ms,reply))=>{state.clock.offset.fetch_add(ms,Ordering::SeqCst);engine.tick(state.clock.now());let _=reply.send(engine.snapshot());},
@@ -284,6 +367,7 @@ impl Native {
                         Some(Message::Inspect(reply))=>{let _=reply.send((engine.snapshot(),engine.diagnostics(),engine.codex_approvals()));},
                         Some(Message::Reset)=>{
                             engine.reset(now);
+                            banter.clear();
                             if codex_approval_sync { codex_sessions.send_replace(Vec::new()); }
                         },
                         Some(Message::Position(p))=>{engine.config.position=Some(p);*state.config.lock().unwrap()=engine.config.clone();position_dirty=true;last_position=Instant::now();},
@@ -327,7 +411,20 @@ impl Native {
                         received=Some(Instant::now());
                         engine.update_codex_approvals(id,next,state.clock.now());
                     },
+                    Some((generation, message)) = progress_rx.recv() => {
+                        banter.progress(generation, &engine, message, state.clock.now());
+                    },
+                    Some((id, result)) = outcome_rx.recv() => {
+                        banter.finish(id, result, state.clock.now(), engine.snapshot().certainty == Certainty::Observed);
+                    },
+                    Some(update) = probe_finished.recv() => {
+                        probe_active = false;
+                        if let Some((generation, config, usage)) = update {
+                            banter.test_ok(generation, config, usage);
+                        }
+                    },
                     _=timer.tick()=>{
+                        dispatch_banter = true;
                         let now=state.clock.now();let lost=state.lost.swap(0,Ordering::SeqCst);if lost>0{engine.lost(lost,now);}engine.tick(now);
                         if position_dirty&&last_position.elapsed()>=Duration::from_millis(500){let _=atomic_write(&config_dir().join("config.json"),&serde_json::to_vec_pretty(&engine.config).unwrap());position_dirty=false;}
                         if last_fullscreen.elapsed()>=Duration::from_secs(2){last_fullscreen=Instant::now();if let Some(app)=&app{
@@ -335,6 +432,20 @@ impl Native {
                             if let Some(w)=app.get_webview_window("pet"){super::restore_position(&w,&engine.config);}
                         }}
                     }
+                }
+                let preview = state
+                    .animation_preview
+                    .lock()
+                    .unwrap()
+                    .snapshot()
+                    .state
+                    .is_some();
+                let banter_view =
+                    banter.refresh(&engine, preview, state.clock.now(), dispatch_banter);
+                if banter_view.revision != last_banter {
+                    last_banter = banter_view.revision;
+                    banter_subscribers
+                        .retain(|_, channel| channel.send(banter_view.clone()).is_ok());
                 }
                 let p = engine.snapshot();
                 if p.revision != last_broadcast {
@@ -395,6 +506,58 @@ impl Native {
             &config_dir().join("config.json"),
             &serde_json::to_vec_pretty(&*self.config.lock().unwrap()).unwrap(),
         );
+    }
+    async fn banter_call<T>(
+        &self,
+        message: impl FnOnce(oneshot::Sender<T>) -> Message,
+    ) -> Result<T, String> {
+        let (tx, rx) = oneshot::channel();
+        self.tx
+            .send(message(tx))
+            .await
+            .map_err(|_| "桌宠服务已停止")?;
+        rx.await.map_err(|_| "桌宠服务已停止".into())
+    }
+    pub async fn banter_subscribe(
+        &self,
+        view: Webview,
+        token: String,
+        callback: JavaScriptChannelId,
+    ) -> Result<BanterProjection, String> {
+        self.banter_call(|tx| Message::BanterSubscribe(Box::new(view), token, callback, tx))
+            .await
+    }
+    pub async fn banter_unsubscribe(&self, id: String) {
+        let _ = self.tx.send(Message::BanterUnsubscribe(id)).await;
+    }
+    pub async fn banter_projection(&self) -> Result<BanterProjection, String> {
+        self.banter_call(Message::BanterGet).await
+    }
+    pub async fn banter_status(&self) -> Result<BanterStatus, String> {
+        self.banter_call(Message::BanterStatus).await
+    }
+    #[cfg(feature = "e2e")]
+    pub async fn banter_fixture(&self, progress: VisibleProgress) -> Result<(), String> {
+        self.banter_call(|tx| Message::BanterFixture(progress, tx))
+            .await
+    }
+    pub async fn banter_save(
+        &self,
+        config: BanterConfig,
+        key: Option<String>,
+        delete: bool,
+    ) -> Result<BanterStatus, String> {
+        self.banter_call(|tx| Message::BanterSave(config, key, delete, tx))
+            .await?
+    }
+    pub async fn banter_probe(
+        &self,
+        config: BanterConfig,
+        key: Option<String>,
+        preview: bool,
+    ) -> Result<String, String> {
+        self.banter_call(|tx| Message::BanterProbe(config, key, preview, tx))
+            .await?
     }
     pub async fn projection(&self) -> Result<Projection, String> {
         let (tx, rx) = oneshot::channel();
