@@ -1,4 +1,68 @@
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Manager, WebviewWindow};
+
+#[cfg(windows)]
+pub fn restore_topmost(window: &WebviewWindow) {
+    use windows_sys::Win32::{
+        Foundation::RECT,
+        UI::WindowsAndMessaging::{
+            GetForegroundWindow, GetWindow, GetWindowLongW, GetWindowRect, IsIconic,
+            IsWindowVisible, SetWindowPos, GWL_EXSTYLE, GW_HWNDNEXT, HWND_TOPMOST, SWP_NOACTIVATE,
+            SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOSIZE, WS_EX_TOPMOST,
+        },
+    };
+    let pet = window.clone();
+    let _ = window.run_on_main_thread(move || {
+        let Ok(handle) = pet.hwnd() else { return };
+        let hwnd = handle.0;
+        // The HWND belongs to this window. Read and update it on its owning thread.
+        unsafe {
+            if IsWindowVisible(hwnd) == 0 || IsIconic(hwnd) != 0 {
+                return;
+            }
+            let topmost = |window| GetWindowLongW(window, GWL_EXSTYLE) as u32 & WS_EX_TOPMOST != 0;
+            if topmost(hwnd) {
+                let foreground = GetForegroundWindow();
+                if foreground.is_null() || foreground == hwnd || topmost(foreground) {
+                    return;
+                }
+                let mut pet_bounds = RECT::default();
+                let mut foreground_bounds = RECT::default();
+                if GetWindowRect(hwnd, &mut pet_bounds) == 0
+                    || GetWindowRect(foreground, &mut foreground_bounds) == 0
+                    || pet_bounds.left >= foreground_bounds.right
+                    || pet_bounds.right <= foreground_bounds.left
+                    || pet_bounds.top >= foreground_bounds.bottom
+                    || pet_bounds.bottom <= foreground_bounds.top
+                {
+                    return;
+                }
+                // The style bit can remain set while a normal window sits above the pet.
+                let mut next = GetWindow(foreground, GW_HWNDNEXT);
+                for _ in 0..2048 {
+                    if next.is_null() || next == hwnd {
+                        break;
+                    }
+                    next = GetWindow(next, GW_HWNDNEXT);
+                }
+                if next != hwnd {
+                    return;
+                }
+            }
+            let _ = SetWindowPos(
+                hwnd,
+                HWND_TOPMOST,
+                0,
+                0,
+                0,
+                0,
+                SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE | SWP_NOOWNERZORDER,
+            );
+        }
+    });
+}
+
+#[cfg(not(windows))]
+pub fn restore_topmost(_: &WebviewWindow) {}
 #[cfg(windows)]
 pub fn fullscreen(app: &AppHandle) -> bool {
     use windows_sys::Win32::{

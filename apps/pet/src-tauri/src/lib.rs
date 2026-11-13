@@ -74,6 +74,7 @@ fn apply_visibility(app: &AppHandle, s: &Native, fullscreen: bool) {
         if visible {
             let _ = w.show();
             let _ = w.set_ignore_cursor_events(c.ghost);
+            platform::restore_topmost(&w);
         } else {
             let _ = w.hide();
         }

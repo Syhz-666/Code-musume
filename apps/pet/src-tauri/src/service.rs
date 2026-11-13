@@ -429,7 +429,12 @@ impl Native {
                         if position_dirty&&last_position.elapsed()>=Duration::from_millis(500){let _=atomic_write(&config_dir().join("config.json"),&serde_json::to_vec_pretty(&engine.config).unwrap());position_dirty=false;}
                         if last_fullscreen.elapsed()>=Duration::from_secs(2){last_fullscreen=Instant::now();if let Some(app)=&app{
                             let f=engine.config.fullscreen_hide&&super::platform::fullscreen(app);if f!=fullscreen{fullscreen=f;super::apply_visibility(app,&state,fullscreen);}
-                            if let Some(w)=app.get_webview_window("pet"){super::restore_position(&w,&engine.config);}
+                            if let Some(w)=app.get_webview_window("pet"){
+                                super::restore_position(&w,&engine.config);
+                                if !fullscreen && !engine.config.user_hidden {
+                                    super::platform::restore_topmost(&w);
+                                }
+                            }
                         }}
                     }
                 }
