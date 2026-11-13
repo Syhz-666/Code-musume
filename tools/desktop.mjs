@@ -45,7 +45,7 @@ try {
     for (const file of readdirSync(join(root, "apps/pet/dist/assets"))) {
       if (
         file.endsWith(".js") &&
-        /wdioTauri|WDIO Tauri Plugin|e2e_advance_clock/.test(
+        /wdioTauri|WDIO Tauri Plugin|e2e_advance_clock|e2e_banter_fixture/.test(
           readFileSync(join(root, "apps/pet/dist/assets", file), "utf8"),
         )
       )
@@ -110,7 +110,7 @@ try {
       process.env.GITHUB_SHA ?? (revision.status === 0 ? revision.stdout.trim() : "unavailable");
     env.CODE_MUSUME_SOURCE_DIRTY = String(dirty.status === 1);
     if (!process.argv.includes("--skip-build")) {
-      run("cargo", ["build", "-p", "code-musume-hook"]);
+      run("cargo", ["build", "-p", "code-musume-hook"], env);
       pm(
         [
           "--filter",
