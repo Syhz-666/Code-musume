@@ -4,6 +4,7 @@ import { createServer } from "node:http";
 import { join } from "node:path";
 import { PNG } from "pngjs";
 import { assertEntryTiming, observePreviewEntry } from "../animation-observation.mjs";
+import { startCodexPeer } from "../codex-peer.mjs";
 import {
   choose,
   health,
@@ -126,7 +127,9 @@ describe("Actual desktop event chain and settings", () => {
       );
     });
     await new Promise((resolve) => mock.listen(0, "127.0.0.1", resolve));
+    let peer;
     try {
+      peer = await startCodexPeer();
       await tab("使用偏好");
       await (await browser.$('[data-testid="open-banter"]')).click();
       const panel = await browser.$('[data-testid="banter-settings"]');
@@ -141,21 +144,15 @@ describe("Actual desktop event chain and settings", () => {
       await (await panel.$("button=保存")).click();
       await browser.waitUntil(async () => (await panel.getText()).includes("已保存"));
       for (const renderer of ["pixi", "dom"]) {
+        const session = `codex-banter-${renderer}`;
         await selectWindow("settings");
         await nativeInvoke("reset_sessions");
         await nativeInvoke("set_config", { config: { ...initialConfig, renderer } });
         await nativeInvoke("e2e_advance_clock", { ms: 30_001 });
-        await hook(cc, "UserPromptSubmit");
+        await hook(cx, "UserPromptSubmit", {}, session, "id118");
         await pet({ state: "thinking", renderer });
-        await nativeInvoke("e2e_banter_fixture", {
-          progress: {
-            agent: cc,
-            session: "ui-session",
-            turn: "ui-turn",
-            id: `progress-${renderer}`,
-            text: "登录测试已通过，正在检查设置。",
-          },
-        });
+        await browser.waitUntil(() => peer.following(session));
+        peer.replay(session);
         const bubble = await browser.$('.bubble[data-kind="banter"]');
         await bubble.waitForDisplayed();
         assert.equal(await bubble.getText(), "登录测试过啦。");
@@ -163,13 +160,25 @@ describe("Actual desktop event chain and settings", () => {
         await nativeInvoke("e2e_recreate_pet");
         await pet({ state: "thinking", renderer }, { prepare: false });
         await (await browser.$('.bubble[data-kind="banter"]')).waitForDisplayed();
-        await hook(cc, "PermissionRequest", { tool_use_id: "fixture" });
+        peer.requestApproval(session);
         await pet({ state: "waiting-permission", pending: 1 });
         assert.equal(await (await browser.$(".bubble")).getAttribute("data-kind"), "status");
       }
       assert.equal(requests.length, 2);
-      assert.match(requests[0].messages.at(-1).content, /登录测试已通过/);
+      assert(
+        requests.every((request) =>
+          request.messages.at(-1).content.includes("redacted progress text"),
+        ),
+      );
+      const report = await nativeInvoke("get_pipeline_diagnostics");
+      assert.equal(report.codexApprovalSync.metrics.lastReceivedVersion, 13);
+      assert.equal(report.codexApprovalSync.metrics.visibleMessages, 2);
+      assert(report.codexApprovalSync.metrics.lastVisibleAtUnixMs > 0);
+      assert.equal(report.banterOutcome, "总结成功");
+      assert(!JSON.stringify(report).includes("redacted progress text"));
+      assert(!JSON.stringify(report).includes("synthetic-key"));
     } finally {
+      await peer?.close();
       await selectWindow("settings");
       const { config } = await nativeInvoke("get_banter_status");
       await nativeInvoke("save_banter", { config, key: null, deleteKey: true });
