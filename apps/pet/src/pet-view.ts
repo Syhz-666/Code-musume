@@ -468,10 +468,9 @@ function apply(p: Projection, immediate = false) {
   wakeDOM();
 }
 function applyAnimationPreview(next: AnimationPreview) {
-  const wasPreviewing = manualPreviewActive();
   animationPreview = next;
   touchUntil = 0;
-  apply(current, wasPreviewing && !manualPreviewActive());
+  apply(current);
 }
 function draw() {
   if (!visible) return;

@@ -51,6 +51,8 @@ describe("Actual desktop event chain and settings", () => {
     // Each case owns its state, including after a failed screenshot/assertion.
     await selectWindow("settings");
     await nativeInvoke("set_config", { config: initialConfig });
+    await nativeInvoke("set_animation_preview_enabled", { enabled: false });
+    await nativeInvoke("set_animation_preview_state", { state: null });
     await nativeInvoke("reset_sessions");
     await browser.refresh();
     await selectWindow("pet");
@@ -724,6 +726,23 @@ describe("Actual desktop event chain and settings", () => {
     await pet({ state: "done", agent: cc });
     await nativeInvoke("e2e_advance_clock", { ms: 3001 });
     await pet({ state: "working", agent: cx, form: "codex" });
+    const config = await nativeInvoke("get_config");
+    await nativeInvoke("set_animation_preview_enabled", { enabled: false });
+    await nativeInvoke("set_config", { config: { ...config, reducedMotion: true } });
+    await selectWindow("pet");
+    await browser.refresh();
+    await pet({ state: "working", agent: cx, form: "codex", animationMode: "real" });
+    await browser.waitUntil(async () =>
+      browser.execute(() => {
+        const app = document.querySelector("#app");
+        return (
+          app.dataset.segment === "working" &&
+          app.dataset.frame === "0" &&
+          app.dataset.animationRunning === "false" &&
+          app.dataset.visualReady === "true"
+        );
+      }),
+    );
     await screenshot("both-restore-codex");
   });
   it("saves form settings through controls and preserves them across page reload", async () => {
