@@ -11,11 +11,30 @@ export class SpritePlayback {
   private reverseFrom: number | null = null;
   private reverseDuration = 0;
   private generation = 0;
+  private presented: { token: string; index: number } | null = null;
 
   reset() {
     this.state = "";
     this.requested = "";
+    this.presented = null;
     this.generation++;
+  }
+
+  markPresented(sample: { token: string; index: number }) {
+    this.presented = { token: sample.token, index: sample.index };
+  }
+
+  private token(key: string) {
+    return `${this.generation}:${key}`;
+  }
+
+  private showed(key: string, index: number) {
+    return this.presented?.token === this.token(key) && this.presented.index === index;
+  }
+
+  private exitLead(sequenced: boolean) {
+    // Join the held pose before the recorded lowering movement advances.
+    return sequenced && this.phase === "exit" && this.reverseFrom === null ? 80 : 0;
   }
 
   private begin(state: string, now: number, clips: Record<string, Clip>) {
@@ -26,7 +45,13 @@ export class SpritePlayback {
     this.generation++;
   }
 
-  sample(clips: Record<string, Clip>, requested: string, now: number, animate: boolean) {
+  sample(
+    clips: Record<string, Clip>,
+    requested: string,
+    now: number,
+    animate: boolean,
+    sequenced = false,
+  ) {
     if (!animate) {
       if (this.state !== requested || this.phase !== "loop") this.generation++;
       this.state = this.requested = requested;
@@ -36,16 +61,31 @@ export class SpritePlayback {
     } else if (!this.state) {
       this.requested = requested;
       this.begin(requested, now, clips);
-    } else if (requested !== this.requested) {
+    } else {
+      const changed = requested !== this.requested;
       this.requested = requested;
+      const reaction = clips[this.state];
+      const oneShot =
+        sequenced &&
+        this.phase !== "exit" &&
+        (this.state === "notification" || this.state === "done") &&
+        reaction &&
+        !reaction.looping;
+      const finishing =
+        oneShot &&
+        (this.phase === "enter" ||
+          now - this.since < (reaction.frames * 1000) / reaction.fps ||
+          !this.showed(this.state, reaction.frames - 1));
       // A pending exit always leads to the latest request, never a queue of old states.
-      if (this.phase !== "exit" && this.state !== requested) {
-        const entry = clips[`${this.state}-enter`];
+      if ((changed || oneShot) && !finishing && this.phase !== "exit" && this.state !== requested) {
+        const entryKey = `${this.state}-enter`;
+        const entry = clips[entryKey];
         if (this.phase === "enter" && entry) {
-          this.reverseFrom = Math.min(
-            entry.frames - 1,
-            Math.floor(((now - this.since) * entry.fps) / 1000),
-          );
+          this.reverseFrom = sequenced
+            ? this.presented?.token === this.token(entryKey)
+              ? this.presented.index
+              : 0
+            : Math.min(entry.frames - 1, Math.floor(((now - this.since) * entry.fps) / 1000));
           this.reverseDuration = Math.min(
             480,
             Math.max(100, (this.reverseFrom * 1000) / entry.fps),
@@ -75,11 +115,14 @@ export class SpritePlayback {
       const duration =
         this.reverseFrom !== null && this.phase === "exit"
           ? this.reverseDuration
-          : (clip.frames * 1000) / clip.fps;
+          : (clip.frames * 1000) / clip.fps + this.exitLead(sequenced);
       if (now - this.since < duration) break;
-      if (this.phase === "exit") this.begin(this.requested, this.since + duration, clips);
+      const lastFrame = this.phase === "exit" && this.reverseFrom !== null ? 0 : clip.frames - 1;
+      if (sequenced && !this.showed(key, lastFrame)) break;
+      const nextStart = sequenced ? now : this.since + duration;
+      if (this.phase === "exit") this.begin(this.requested, nextStart, clips);
       else {
-        this.since += duration;
+        this.since = nextStart;
         this.phase = "loop";
         this.generation++;
       }
@@ -90,10 +133,14 @@ export class SpritePlayback {
         : this.phase === "loop"
           ? this.state
           : `${this.state}-${this.phase}`;
-    const key = clips[segment] ? segment : "idle";
+    const still = `${requested}-still`;
+    const key = !animate && clips[still] ? still : clips[segment] ? segment : "idle";
     const clip = clips[key];
     if (!clip) return null;
-    const tick = Math.max(0, Math.floor(((now - this.since) * clip.fps) / 1000));
+    const tick = Math.max(
+      0,
+      Math.floor(((now - this.since - this.exitLead(sequenced)) * clip.fps) / 1000),
+    );
     let index = !animate ? 0 : clip.looping ? tick % clip.frames : Math.min(clip.frames - 1, tick);
     if (animate && this.phase === "exit" && this.reverseFrom !== null) {
       const t = Math.min(1, Math.max(0, (now - this.since) / this.reverseDuration));
@@ -105,9 +152,10 @@ export class SpritePlayback {
       index,
       phase: this.phase,
       state: this.state,
-      token: `${this.generation}:${key}`,
+      token: this.token(key),
       ready: this.state === requested && this.phase !== "exit",
-      transitioning: this.phase !== "loop",
+      transitioning:
+        this.phase !== "loop" || (animate && sequenced && !clip.looping && index < clip.frames - 1),
     };
   }
 }

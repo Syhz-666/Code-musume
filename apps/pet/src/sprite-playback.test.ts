@@ -124,6 +124,61 @@ describe("sprite presentation sequence", () => {
     });
   });
 
+  it("reverses from the last painted frame and presents neutral before a queued state", () => {
+    const player = new SpritePlayback();
+    player.sample(clips, "thinking", 0, true, true);
+    const raised = player.sample(clips, "thinking", 200, true, true);
+    if (raised) player.markPresented(raised);
+    expect(player.sample(clips, "working", 700, true, true)).toMatchObject({
+      key: "thinking-enter",
+      index: 9,
+      phase: "exit",
+    });
+    const neutral = player.sample(clips, "sleeping", 1000, true, true);
+    expect(neutral).toMatchObject({ key: "thinking-enter", phase: "exit", index: 0, ready: false });
+    if (neutral) player.markPresented(neutral);
+    expect(player.sample(clips, "sleeping", 1010, true, true)).toMatchObject({
+      key: "sleeping",
+      index: 0,
+      ready: true,
+    });
+  });
+
+  it("finishes a Codex reaction through its last displayed frame and uses the newest request", () => {
+    const player = new SpritePlayback();
+    const reactions = {
+      ...clips,
+      notification: { ...still, frames: 96, fps: 24, looping: false },
+    };
+    player.sample(reactions, "notification", 0, true, true);
+    expect(player.sample(reactions, "working", 1000, true, true)).toMatchObject({
+      key: "notification",
+      index: 24,
+      ready: false,
+    });
+    const last = player.sample(reactions, "thinking", 4100, true, true);
+    expect(last).toMatchObject({ key: "notification", index: 95, ready: false });
+    if (last) player.markPresented(last);
+    expect(player.sample(reactions, "thinking", 4110, true, true)).toMatchObject({
+      key: "thinking-enter",
+      index: 0,
+    });
+  });
+
+  it("hands off the held pose before advancing the recorded exit", () => {
+    const player = new SpritePlayback();
+    player.sample(clips, "thinking", 0, true, true);
+    const entryEnd = player.sample(clips, "thinking", 1250, true, true);
+    if (entryEnd) player.markPresented(entryEnd);
+    expect(player.sample(clips, "thinking", 1266, true, true)?.key).toBe("thinking");
+    expect(player.sample(clips, "working", 1500, true, true)).toMatchObject({
+      key: "thinking-exit",
+      index: 0,
+    });
+    expect(player.sample(clips, "working", 1579, true, true)?.index).toBe(0);
+    expect(player.sample(clips, "working", 1625, true, true)?.index).toBe(2);
+  });
+
   it("reduced motion cancels any entry/exit and shows the state's representative still", () => {
     const player = new SpritePlayback();
     player.sample(clips, "thinking", 0, true);

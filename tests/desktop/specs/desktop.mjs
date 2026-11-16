@@ -745,6 +745,179 @@ describe("Actual desktop event chain and settings", () => {
     await (await browser.$("button=保存角色选择")).click();
     await pet({ form: "codex" });
   });
+  it("plays both Codex costume changes and renders the eight Codex states", async () => {
+    const view = () => browser.execute(() => ({ ...document.querySelector("#app").dataset }));
+    const waitForChange = async (segment) => {
+      await browser.waitUntil(
+        async () => {
+          const actual = await view();
+          return (
+            actual.segment === segment &&
+            actual.atlas === "costume-change.webp" &&
+            Number(actual.frame) > 0 &&
+            actual.visualReady === "false"
+          );
+        },
+        { timeoutMsg: `Did not play ${segment}` },
+      );
+    };
+    for (const renderer of ["pixi", "dom"]) {
+      await selectWindow("settings");
+      await nativeInvoke("set_config", {
+        config: { ...initialConfig, renderer, formLock: "default", reducedMotion: false },
+      });
+      await pet({ renderer, form: "default", atlas: "spritesheet.png" });
+      const config = await nativeInvoke("get_config");
+      await nativeInvoke("set_config", { config: { ...config, formLock: "codex" } });
+      await waitForChange("form-to-codex");
+      await pet({ renderer, form: "codex", atlas: "codex-idle.png" });
+      await browser.saveScreenshot(join(runDir, `codex-idle-${renderer}.png`));
+      await nativeInvoke("set_animation_preview_enabled", { enabled: true });
+      for (const [state, atlas] of Object.entries({
+        idle: "codex-idle.png",
+        thinking: "codex-thinking.webp",
+        working: "codex-work.webp",
+        "waiting-permission": "codex-work.webp",
+        notification: "codex-reactions.webp",
+        done: "codex-reactions.webp",
+        error: "codex-rest.webp",
+        sleeping: "codex-rest.webp",
+      })) {
+        await nativeInvoke("set_animation_preview_state", { state });
+        await browser.waitUntil(
+          async () => {
+            const actual = await view();
+            return (
+              actual.displayState === state &&
+              actual.visualState === state &&
+              actual.atlas === atlas
+            );
+          },
+          { timeoutMsg: `Wrong Codex artwork for ${state}` },
+        );
+      }
+      await nativeInvoke("set_animation_preview_enabled", { enabled: false });
+      await pet({ renderer, form: "codex", atlas: "codex-idle.png" });
+      await nativeInvoke("set_config", { config: { ...config, formLock: "default" } });
+      await waitForChange("form-to-default");
+      await pet({ renderer, form: "default", atlas: "spritesheet.png" });
+      await nativeInvoke("set_config", {
+        config: { ...config, formLock: "codex", reducedMotion: true },
+      });
+      await pet({ renderer, form: "codex", atlas: "codex-idle.png", animationRunning: false });
+    }
+  });
+  it("keeps Codex gestures held and sequences interrupted state changes", async () => {
+    const clearFrames = () =>
+      browser.execute(() => {
+        window.codexPlaybackFrames = [];
+      });
+    const frames = () => browser.execute(() => window.codexPlaybackFrames ?? []);
+    const waitFor = (check, message, timeout = 10000) =>
+      browser.waitUntil(async () => check(await frames()), { timeout, timeoutMsg: message });
+    const requestState = (state) => nativeInvoke("set_animation_preview_state", { state });
+    for (const renderer of ["pixi", "dom"]) {
+      await selectWindow("settings");
+      const config = { ...initialConfig, renderer, formLock: "codex", reducedMotion: false };
+      await nativeInvoke("set_config", { config });
+      await pet({ renderer, form: "codex", atlas: "codex-idle.png" });
+      await browser.execute(() => {
+        window.codexPlaybackFrames = [];
+        window.addEventListener("code-musume:e2e-frame", (e) =>
+          window.codexPlaybackFrames.push(e.detail),
+        );
+      });
+      await nativeInvoke("set_animation_preview_enabled", { enabled: true });
+      for (const [state, frameCount] of [
+        ["thinking", 90],
+        ["waiting-permission", 70],
+      ]) {
+        await clearFrames();
+        await requestState(state);
+        await waitFor(
+          (trace) => {
+            const held = trace.filter((frame) => frame.segment === state && frame.phase === "loop");
+            return held.filter((frame, i) => i && frame.frame < held[i - 1].frame).length >= 3;
+          },
+          `${renderer}: ${state} did not loop three times`,
+          17000,
+        );
+        const held = (await frames()).filter((frame) => frame.segment === state);
+        assert(held.every((frame) => frame.frames === frameCount && frame.phase === "loop"));
+      }
+      await clearFrames();
+      await requestState("working");
+      await waitFor(
+        (trace) => trace.some((frame) => frame.segment === "working-enter"),
+        "Working did not start",
+      );
+      const waitingExit = (await frames()).filter(
+        (frame) => frame.segment === "waiting-permission-exit",
+      );
+      assert(waitingExit.length > 0 && waitingExit.at(-1).frame === waitingExit.at(-1).frames - 1);
+
+      await requestState("idle");
+      await waitFor((trace) => trace.at(-1)?.segment === "idle", "Did not return to idle");
+      await clearFrames();
+      await requestState("thinking");
+      await waitFor((trace) => {
+        const last = trace.at(-1);
+        return last?.segment === "thinking-enter" && last.frame >= 8;
+      }, "Thinking did not begin to raise her hand");
+      await requestState("working");
+      await waitFor(
+        (trace) => trace.some((frame) => frame.segment === "working-enter"),
+        "Interrupted thinking did not hand off",
+      );
+      const interrupted = await frames();
+      const firstExit = interrupted.findIndex((frame) => frame.phase === "exit");
+      assert(firstExit > 0);
+      assert.equal(interrupted[firstExit].segment, "thinking-enter");
+      assert.equal(interrupted[firstExit].frame, interrupted[firstExit - 1].frame);
+
+      await clearFrames();
+      await requestState("notification");
+      await waitFor(
+        (trace) => trace.at(-1)?.segment === "notification" && trace.at(-1).frame >= 8,
+        "Wave did not start",
+      );
+      await requestState("thinking");
+      await requestState("sleeping");
+      await waitFor(
+        (trace) => trace.some((frame) => frame.segment === "sleeping-enter"),
+        "Latest state was not used after the wave",
+      );
+      const wave = await frames();
+      assert(!wave.some((frame) => frame.segment === "thinking-enter"));
+      const lastWave = wave.findLast((frame) => frame.segment === "notification");
+      assert.equal(lastWave?.frame, 95);
+
+      await clearFrames();
+      await requestState("done");
+      await waitFor(
+        (trace) => trace.at(-1)?.segment === "done" && trace.at(-1).frame >= 15,
+        "Completion did not reach the smile",
+      );
+      const previewConfig = await nativeInvoke("get_config");
+      await nativeInvoke("set_config", { config: { ...previewConfig, formLock: "default" } });
+      await waitFor(
+        (trace) => trace.some((frame) => frame.segment === "form-to-default"),
+        "Costume change did not start",
+      );
+      assert.equal((await frames()).findLast((frame) => frame.segment === "done")?.frame, 90);
+      await requestState("working");
+      await waitFor(
+        (trace) => trace.some((frame) => frame.segment === "working-enter"),
+        "Costume did not hand off to the latest state",
+      );
+      assert.equal(
+        (await frames()).findLast((frame) => frame.segment === "form-to-default")?.frame,
+        75,
+      );
+      await nativeInvoke("set_animation_preview_enabled", { enabled: false });
+      await pet({ renderer, form: "default", state: "idle", atlas: "spritesheet.png" });
+    }
+  });
   it("manually previews all eight states without overriding real work in either renderer", async () => {
     await selectWindow("settings");
     await assert.rejects(

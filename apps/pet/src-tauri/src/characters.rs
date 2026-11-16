@@ -227,25 +227,32 @@ pub fn asset_page(id: &str, form: &str, image: Option<&str>) -> Result<String, S
     if !asset_names(f).contains(name) {
         return Err("找不到角色图集".into());
     }
-    if id == "builtin" {
+    let mime = if name.ends_with(".webp") {
+        "image/webp"
+    } else {
+        "image/png"
+    };
+    let bytes = if id == "builtin" {
         let bytes: &[u8] = match name {
             "spritesheet.png" => include_bytes!("../../assets/builtin/spritesheet.png"),
             "thinking.png" => include_bytes!("../../assets/builtin/thinking.png"),
             "working.png" => include_bytes!("../../assets/builtin/working.png"),
             "attention.png" => include_bytes!("../../assets/builtin/attention.png"),
+            "codex-idle.png" => include_bytes!("../../assets/builtin/codex-idle.png"),
+            "codex-reactions.webp" => include_bytes!("../../assets/builtin/codex-reactions.webp"),
+            "codex-rest.webp" => include_bytes!("../../assets/builtin/codex-rest.webp"),
+            "codex-thinking.webp" => include_bytes!("../../assets/builtin/codex-thinking.webp"),
+            "codex-work.webp" => include_bytes!("../../assets/builtin/codex-work.webp"),
+            "costume-change.webp" => include_bytes!("../../assets/builtin/costume-change.webp"),
             "sleeping.png" => include_bytes!("../../assets/builtin/sleeping.png"),
             "error.png" => include_bytes!("../../assets/builtin/error.png"),
             _ => return Err("找不到角色图集".into()),
         };
-        return Ok(format!("data:image/png;base64,{}", STANDARD.encode(bytes)));
-    }
-    let b = image_bytes(&root().join(id).join(name))?;
-    let mime = if name.ends_with(".png") {
-        "image/png"
+        STANDARD.encode(bytes)
     } else {
-        "image/webp"
+        STANDARD.encode(image_bytes(&root().join(id).join(name))?)
     };
-    Ok(format!("data:{mime};base64,{}", STANDARD.encode(b)))
+    Ok(format!("data:{mime};base64,{bytes}"))
 }
 pub fn import(source: &Path) -> Result<CharacterManifest, String> {
     let dir = if source.is_dir() {
@@ -413,6 +420,9 @@ mod tests {
         let bytes = include_bytes!("../../assets/builtin/spritesheet.png");
         let image = decode(bytes).unwrap().to_rgba8();
         assert_eq!(image.dimensions(), (3072, 3536));
+        let codex_idle_bytes = include_bytes!("../../assets/builtin/codex-idle.png");
+        let codex_idle = decode(codex_idle_bytes).unwrap().to_rgba8();
+        assert_eq!(codex_idle.dimensions(), (3072, 3328));
         let thinking_bytes = include_bytes!("../../assets/builtin/thinking.png");
         let thinking = decode(thinking_bytes).unwrap().to_rgba8();
         assert_eq!(thinking.dimensions(), (3072, 3328));
@@ -438,8 +448,8 @@ mod tests {
             "error",
             "sleeping",
         ];
-        for form in &manifest.forms {
-            assert_eq!(form.clips.len(), states.len() + 12);
+        for form in manifest.forms.iter().filter(|form| form.id != "codex") {
+            assert_eq!(form.clips.len(), states.len() + 13);
             for state in &states {
                 let clip = &form.clips[*state];
                 if *state == "thinking" {
@@ -496,6 +506,8 @@ mod tests {
             }
             assert_eq!(form.clips["idle"].fps, 24.0);
             assert!(form.clips["idle"].looping);
+            assert!(form.clips["idle"].image.is_none());
+            assert!(asset_page("builtin", &form.id, Some("codex-idle.png")).is_err());
             assert_eq!(form.clips["thinking-enter"].frames, 60);
             assert_eq!(form.clips["thinking-exit"].frames, 30);
             assert_eq!(form.clips["working-enter"].frames, 36);
@@ -558,6 +570,7 @@ mod tests {
         }
         for (page, count) in [
             (&image, 270),
+            (&codex_idle, 243),
             (&thinking, 246),
             (&working, 154),
             (&attention, 212),
@@ -592,6 +605,92 @@ mod tests {
             image::imageops::crop_imm(page, slot % 16 * 192, slot / 16 * 208, 192, 208).to_image()
         };
         assert_eq!(cell(&image, 0), cell(&image, 242));
+        let codex = manifest
+            .forms
+            .iter()
+            .find(|form| form.id == "codex")
+            .unwrap();
+        assert_eq!(codex.image, "codex-idle.png");
+        assert_eq!(
+            asset("builtin", "codex").unwrap(),
+            format!(
+                "data:image/png;base64,{}",
+                STANDARD.encode(codex_idle_bytes)
+            )
+        );
+        let visible_cell = |page: &image::RgbaImage, slot| {
+            let mut frame = cell(page, slot);
+            // Lossless WebP may store arbitrary RGB in pixels with zero alpha.
+            for pixel in frame.pixels_mut().filter(|pixel| pixel.0[3] == 0) {
+                pixel.0 = [0; 4];
+            }
+            frame
+        };
+        let codex_pose = visible_cell(&codex_idle, 0);
+        let home_pose = visible_cell(&image, 0);
+        let pages: std::collections::BTreeMap<_, _> = asset_names(codex)
+            .into_iter()
+            .filter(|name| *name != codex.image)
+            .map(|name| {
+                let page = decode(&image_bytes(&dir.join(name)).unwrap())
+                    .unwrap()
+                    .to_rgba8();
+                (name, page)
+            })
+            .collect();
+        let bound_clip = |form_id: &str, key: &str| {
+            let current = manifest
+                .forms
+                .iter()
+                .find(|form| form.id == form_id)
+                .unwrap();
+            let clip = &current.clips[key];
+            let page = &pages[clip.image.as_deref().unwrap_or(&current.image)];
+            let start = clip.row * current.columns + clip.column;
+            (
+                visible_cell(page, start),
+                visible_cell(page, start + clip.frames - 1),
+            )
+        };
+        for state in [
+            "thinking",
+            "working",
+            "waiting-permission",
+            "error",
+            "sleeping",
+        ] {
+            let (first, last) = bound_clip("codex", state);
+            assert!(first == last, "{state} loop must meet at the same pose");
+            assert_eq!(
+                bound_clip("codex", &format!("{state}-enter")),
+                (codex_pose.clone(), first.clone())
+            );
+            assert_eq!(
+                bound_clip("codex", &format!("{state}-exit")),
+                (first, codex_pose.clone())
+            );
+        }
+        for state in ["notification", "done"] {
+            assert_eq!(
+                bound_clip("codex", state),
+                (codex_pose.clone(), codex_pose.clone())
+            );
+        }
+        for form_id in ["default", "claude"] {
+            assert_eq!(
+                bound_clip(form_id, "form-to-codex"),
+                (home_pose.clone(), codex_pose.clone())
+            );
+            assert_eq!(
+                bound_clip("codex", &format!("form-to-{form_id}")),
+                (codex_pose.clone(), home_pose.clone())
+            );
+        }
+        assert!(
+            asset_page("builtin", "default", Some("costume-change.webp"))
+                .unwrap()
+                .starts_with("data:image/webp;base64,")
+        );
         assert_eq!(cell(&image, 0), cell(&thinking, 0));
         assert_eq!(cell(&image, 0), cell(&thinking, 209));
         assert_eq!(cell(&thinking, 60), cell(&thinking, 179));
@@ -662,6 +761,7 @@ mod tests {
         }
         for (page, padding) in [
             (&image, 270..272),
+            (&codex_idle, 243..256),
             (&thinking, 246..256),
             (&attention, 212..224),
             (&sleeping, 125..128),

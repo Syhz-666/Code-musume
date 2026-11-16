@@ -7,6 +7,7 @@ export class SpriteTransition {
   private snapshot = document.createElement("canvas");
   private key = "";
   private since = 0;
+  private duration = 180;
   active = false;
 
   constructor(stage: HTMLElement) {
@@ -30,6 +31,7 @@ export class SpriteTransition {
     now: number,
     animate: boolean,
     renderer: string,
+    duration = 180,
   ) {
     if (this.canvas.width !== form.cellWidth || this.canvas.height !== form.cellHeight) {
       this.canvas.width = this.snapshot.width = form.cellWidth;
@@ -42,6 +44,7 @@ export class SpriteTransition {
       // Freeze the already mixed pose when a transition is interrupted.
       snapshot?.drawImage(this.canvas, 0, 0);
       this.since = now;
+      this.duration = duration;
       this.active = true;
     }
     if (!animate) this.active = false;
@@ -49,7 +52,7 @@ export class SpriteTransition {
     const context = this.canvas.getContext("2d");
     if (!context) return;
     const position = spriteFramePosition(form.columns, clip, index);
-    const progress = Math.min(1, Math.max(0, (now - this.since) / 180));
+    const progress = Math.min(1, Math.max(0, (now - this.since) / this.duration));
     const weight = this.active ? progress * progress * (3 - 2 * progress) : 1;
     context.clearRect(0, 0, form.cellWidth, form.cellHeight);
     context.globalCompositeOperation = "source-over";

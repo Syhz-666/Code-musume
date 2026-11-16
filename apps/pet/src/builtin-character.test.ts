@@ -12,8 +12,12 @@ describe("bundled homewear character", () => {
   });
 
   it("keeps the shared resolution and non-overlapping clips for all states", () => {
-    for (const form of builtinManifest.forms) {
-      expect(Object.keys(form.clips).sort()).toEqual(
+    for (const form of builtinManifest.forms.filter((item) => item.id !== "codex")) {
+      expect(
+        Object.keys(form.clips)
+          .filter((key) => !key.startsWith("form-to-"))
+          .sort(),
+      ).toEqual(
         [
           ...Object.keys(STATE_LABELS),
           "thinking-enter",
@@ -33,7 +37,13 @@ describe("bundled homewear character", () => {
       expect(form.cellWidth).toBe(192);
       expect(form.cellHeight).toBe(208);
       expect(form.columns).toBe(16);
-      expect(form.clips.idle).toEqual({ row: 0, column: 0, frames: 243, fps: 24, looping: true });
+      expect(form.clips.idle).toEqual({
+        row: 0,
+        column: 0,
+        frames: 243,
+        fps: 24,
+        looping: true,
+      });
       expect(form.clips.thinking).toMatchObject({
         image: "thinking.png",
         frames: 120,
@@ -43,6 +53,7 @@ describe("bundled homewear character", () => {
       expect(form.clips["thinking-enter"]).toMatchObject({ frames: 60, fps: 48, looping: false });
       expect(form.clips["thinking-exit"]).toMatchObject({ frames: 30, fps: 60, looping: false });
       expect(builtinAssetUrl("thinking.png")).toContain("thinking.png");
+      expect(builtinAssetUrl("codex-idle.png")).toContain("codex-idle.png");
       expect(form.clips.working).toMatchObject({
         image: "working.png",
         frames: 88,
@@ -151,7 +162,32 @@ describe("bundled homewear character", () => {
           occupied.add(slot);
         }
       }
-      expect(occupied.size).toBe(1072);
+      expect(occupied.size).toBe(1146);
+      expect(form.clips["form-to-codex"]).toMatchObject({
+        image: "costume-change.webp",
+        frames: 74,
+        looping: false,
+      });
     }
+  });
+
+  it("uses dedicated Codex artwork for each state and a separate return clip", () => {
+    const codex = builtinManifest.forms.find((form) => form.id === "codex");
+    expect(codex?.image).toBe("codex-idle.png");
+    if (!codex) throw new Error("Missing Codex form");
+    for (const state of Object.keys(STATE_LABELS)) {
+      const clip = codex.clips[state];
+      if (!clip) throw new Error(`Missing Codex clip for ${state}`);
+      expect(clip.frames).toBeGreaterThan(1);
+      const image = clip.image ?? codex.image;
+      expect(image).toMatch(/^codex-/);
+      expect(builtinAssetUrl(image)).toContain(image);
+    }
+    expect(codex.clips["form-to-default"]).toMatchObject({
+      image: "costume-change.webp",
+      frames: 76,
+      looping: false,
+    });
+    expect(codex.clips["form-to-claude"]).toEqual(codex.clips["form-to-default"]);
   });
 });
