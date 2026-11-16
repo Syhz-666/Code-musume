@@ -1,9 +1,14 @@
 //! Read-only observer of the desktop's local thread sync protocol.
+use code_musume_contracts::diagnostics::{CodexSyncFailure, CodexSyncMetrics};
 use code_musume_contracts::{Agent, VisibleProgress};
 use code_musume_core::engine::CodexApprovals;
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
-use std::{collections::BTreeMap, io, time::Duration};
+use std::{
+    collections::BTreeMap,
+    io,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::windows::named_pipe::{ClientOptions, NamedPipeClient},
@@ -11,8 +16,9 @@ use tokio::{
     time::{interval, sleep, timeout, Instant, MissedTickBehavior},
 };
 
+#[cfg(not(feature = "e2e"))]
 pub const PIPE: &str = r"\\.\pipe\codex-ipc";
-const SYNC_VERSION: u64 = 11;
+const SUPPORTED_SYNC_VERSIONS: [u32; 2] = [11, 13];
 const MAX_FRAME: usize = 32 * 1024 * 1024;
 const RETRY: Duration = Duration::from_secs(2);
 const WRITE_TIMEOUT: Duration = Duration::from_secs(2);
@@ -290,18 +296,27 @@ pub struct Rejections {
     pub revision: u64,
 }
 
-impl Rejections {
-    fn plus(self, other: Self) -> Self {
+#[derive(Clone, PartialEq, Eq)]
+pub struct SyncDiagnostics {
+    pub rejected: Rejections,
+    pub metrics: CodexSyncMetrics,
+}
+
+impl Default for SyncDiagnostics {
+    fn default() -> Self {
         Self {
-            version: self.version + other.version,
-            shape: self.shape + other.shape,
-            revision: self.revision + other.revision,
+            rejected: Rejections::default(),
+            metrics: CodexSyncMetrics {
+                supported_versions: SUPPORTED_SYNC_VERSIONS.to_vec(),
+                ..Default::default()
+            },
         }
     }
 }
 
 struct Stream {
     owner: String,
+    version: u32,
     revision: u64,
     state: Value,
     counts: CodexApprovals,
@@ -311,7 +326,7 @@ struct Stream {
 #[derive(Default)]
 struct Observer {
     streams: BTreeMap<String, Option<Stream>>,
-    rejected: Rejections,
+    diagnostics: SyncDiagnostics,
     capture: bool,
 }
 
@@ -385,7 +400,7 @@ impl Observer {
             return vec![];
         };
         if msg["method"] == "client-status-changed" && params["status"] == "disconnected" {
-            return self
+            let updates: Vec<_> = self
                 .streams
                 .iter_mut()
                 .filter_map(|(id, stream)| {
@@ -397,6 +412,10 @@ impl Observer {
                     }
                 })
                 .collect();
+            if !updates.is_empty() {
+                self.diagnostics.metrics.last_failure = Some(CodexSyncFailure::Disconnected);
+            }
+            return updates;
         }
         if msg["method"] != "thread-stream-state-changed" || params["hostId"] != "local" {
             return vec![];
@@ -426,17 +445,27 @@ impl Observer {
         };
         // Count rejections even before the first snapshot, so an incompatible desktop
         // is visible in diagnostics rather than looking like an idle connection.
-        if msg["version"] != SYNC_VERSION {
-            self.rejected.version += 1;
+        let received = msg["version"].as_u64();
+        self.diagnostics.metrics.last_received_version = received;
+        let Some(version) = received
+            .and_then(|v| u32::try_from(v).ok())
+            .filter(|v| SUPPORTED_SYNC_VERSIONS.contains(v))
+        else {
+            self.diagnostics.rejected.version += 1;
+            self.diagnostics.metrics.last_failure = Some(CodexSyncFailure::UnsupportedVersion);
             return invalidate(current, false);
-        }
+        };
         let Some(revision) = change["revision"].as_u64() else {
-            self.rejected.shape += 1;
+            self.diagnostics.rejected.shape += 1;
+            self.diagnostics.metrics.last_failure = Some(CodexSyncFailure::InvalidFrame);
             return invalidate(current, false);
         };
         match change["type"].as_str() {
             Some("snapshot") => {
-                if let Some(stream) = current.as_mut().filter(|s| revision <= s.revision) {
+                if let Some(stream) = current
+                    .as_mut()
+                    .filter(|s| s.version == version && revision <= s.revision)
+                {
                     if revision == stream.revision && self.capture && stream.progress.is_none() {
                         stream.progress = Some(progress_baseline(change, id));
                     }
@@ -444,12 +473,14 @@ impl Observer {
                 }
                 let state = Shape::Root.redact(&change["conversationState"], false);
                 let Some(counts) = counts(&state) else {
-                    self.rejected.shape += 1;
+                    self.diagnostics.rejected.shape += 1;
+                    self.diagnostics.metrics.last_failure = Some(CodexSyncFailure::InvalidFrame);
                     return invalidate(current, false);
                 };
                 let progress = self.capture.then(|| progress_baseline(change, id));
                 *current = Some(Stream {
                     owner: owner.into(),
+                    version,
                     revision,
                     state,
                     counts,
@@ -460,26 +491,35 @@ impl Observer {
                 let Some(stream) = current.as_mut() else {
                     return vec![];
                 };
+                if version != stream.version {
+                    self.diagnostics.rejected.version += 1;
+                    self.diagnostics.metrics.last_failure = Some(CodexSyncFailure::VersionChanged);
+                    return invalidate(current, true);
+                }
                 if revision <= stream.revision {
                     return vec![];
                 }
                 if change["baseRevision"].as_u64() != Some(stream.revision) {
-                    self.rejected.revision += 1;
+                    self.diagnostics.rejected.revision += 1;
+                    self.diagnostics.metrics.last_failure = Some(CodexSyncFailure::RevisionGap);
                     return invalidate(current, true);
                 }
                 let Some(patches) = change["patches"].as_array() else {
-                    self.rejected.shape += 1;
+                    self.diagnostics.rejected.shape += 1;
+                    self.diagnostics.metrics.last_failure = Some(CodexSyncFailure::InvalidFrame);
                     return invalidate(current, true);
                 };
                 if patches
                     .iter()
                     .any(|patch| apply(&mut stream.state, patch, false).is_none())
                 {
-                    self.rejected.shape += 1;
+                    self.diagnostics.rejected.shape += 1;
+                    self.diagnostics.metrics.last_failure = Some(CodexSyncFailure::InvalidFrame);
                     return invalidate(current, true);
                 }
                 let Some(counts) = counts(&stream.state) else {
-                    self.rejected.shape += 1;
+                    self.diagnostics.rejected.shape += 1;
+                    self.diagnostics.metrics.last_failure = Some(CodexSyncFailure::InvalidFrame);
                     return invalidate(current, true);
                 };
                 stream.revision = revision;
@@ -489,11 +529,15 @@ impl Observer {
                         messages = visible_messages(progress, id, false);
                     } else {
                         stream.progress = None;
+                        self.diagnostics.rejected.shape += 1;
+                        self.diagnostics.metrics.last_failure =
+                            Some(CodexSyncFailure::InvalidFrame);
                     }
                 }
             }
             _ => {
-                self.rejected.shape += 1;
+                self.diagnostics.rejected.shape += 1;
+                self.diagnostics.metrics.last_failure = Some(CodexSyncFailure::InvalidFrame);
                 return invalidate(current, false);
             }
         }
@@ -594,11 +638,10 @@ async fn connected(
     mut pipe: NamedPipeClient,
     wanted: &mut watch::Receiver<Vec<String>>,
     updates: &mpsc::Sender<Update>,
-    rejections: &watch::Sender<Rejections>,
+    diagnostics: &watch::Sender<SyncDiagnostics>,
     capture: &mut watch::Receiver<Option<u64>>,
     progress: Option<&mpsc::Sender<(u64, VisibleProgress)>>,
 ) -> io::Result<()> {
-    let base = *rejections.borrow();
     let init = uuid::Uuid::new_v4().to_string();
     send(
         &mut pipe,
@@ -609,7 +652,10 @@ async fn connected(
     )
     .await?;
     let mut frames = Frames::default();
-    let mut observer = Observer::default();
+    let mut observer = Observer {
+        diagnostics: diagnostics.borrow().clone(),
+        ..Default::default()
+    };
     let mut generation = *capture.borrow_and_update();
     observer.capture = generation.is_some();
     let mut client = None::<String>;
@@ -632,11 +678,7 @@ async fn connected(
                             sync(&mut pipe, id, &mut observer, &ids).await?;
                         }
                     } else if let Some(client) = &client {
-                        let before = observer.rejected;
                         let events = observer.frame(&msg);
-                        if observer.rejected != before {
-                            rejections.send_replace(base.plus(observer.rejected));
-                        }
                         for event in events {
                             match event {
                                 Observation::Changed(update) => {
@@ -645,10 +687,18 @@ async fn connected(
                                 Observation::Resync(id) => follow(&mut pipe, client, &id, true).await?,
                                 Observation::Progress(message) => {
                                     if let (Some(generation), Some(tx)) = (generation, progress) {
-                                        let _ = tx.try_send((generation, message));
+                                        if tx.try_send((generation, message)).is_ok() {
+                                            observer.diagnostics.metrics.visible_messages += 1;
+                                            observer.diagnostics.metrics.last_visible_at_unix_ms =
+                                                SystemTime::now().duration_since(UNIX_EPOCH).ok()
+                                                    .map(|age| age.as_millis() as u64);
+                                        }
                                     }
                                 }
                             }
+                        }
+                        if *diagnostics.borrow() != observer.diagnostics {
+                            diagnostics.send_replace(observer.diagnostics.clone());
                         }
                     }
                 }
@@ -690,7 +740,7 @@ pub async fn observe(
     path: &str,
     mut wanted: watch::Receiver<Vec<String>>,
     updates: mpsc::Sender<Update>,
-    rejections: watch::Sender<Rejections>,
+    diagnostics: watch::Sender<SyncDiagnostics>,
     mut capture: watch::Receiver<Option<u64>>,
     progress: Option<mpsc::Sender<(u64, VisibleProgress)>>,
 ) {
@@ -705,11 +755,14 @@ pub async fn observe(
                 pipe,
                 &mut wanted,
                 &updates,
-                &rejections,
+                &diagnostics,
                 &mut capture,
                 progress.as_ref(),
             )
             .await;
+            diagnostics.send_modify(|status| {
+                status.metrics.last_failure = Some(CodexSyncFailure::Disconnected);
+            });
             let ids = wanted.borrow().clone();
             for id in ids {
                 if updates.send((id, None)).await.is_err() {

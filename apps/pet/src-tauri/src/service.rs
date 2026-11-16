@@ -31,6 +31,7 @@ type Inspection = (
     Projection,
     Vec<Diagnostic>,
     BTreeMap<String, CodexApprovalStatus>,
+    String,
 );
 
 enum Message {
@@ -115,7 +116,7 @@ pub struct Native {
     pipeline: Mutex<PipelineDiagnostics>,
     codex_approval_sync: bool,
     #[cfg(windows)]
-    approval_rejections: watch::Receiver<super::codex_approval::Rejections>,
+    approval_diagnostics: watch::Receiver<super::codex_approval::SyncDiagnostics>,
     clock: Clock,
 }
 impl Native {
@@ -131,14 +132,21 @@ impl Native {
             .send(Message::Inspect(tx))
             .await
             .map_err(|_| "核心已停止")?;
-        let (projection, diagnostics, approvals) = rx.await.map_err(|_| "核心已停止")?;
+        let (projection, diagnostics, approvals, banter_outcome) =
+            rx.await.map_err(|_| "核心已停止")?;
         let pipeline = self.pipeline.lock().unwrap().snapshot();
         let preview = self.animation_preview.lock().unwrap().snapshot();
         let receipt = self.render_receipts.lock().unwrap().latest.clone();
         #[cfg(windows)]
-        let rejected = serde_json::to_value(*self.approval_rejections.borrow()).unwrap_or_default();
+        let (rejected, metrics) = {
+            let sync = self.approval_diagnostics.borrow();
+            (
+                serde_json::json!(sync.rejected),
+                serde_json::json!(sync.metrics),
+            )
+        };
         #[cfg(not(windows))]
-        let rejected = serde_json::Value::Null;
+        let (rejected, metrics) = (serde_json::Value::Null, serde_json::Value::Null);
         Ok(serde_json::json!({
             "v": 2, "appVersion": self.runtime.app_version,
             "instanceId": self.runtime.instance_id, "capturedAtMs": self.clock.now(),
@@ -147,13 +155,19 @@ impl Native {
                 "limitEntries": MAX_QUEUE_ENTRIES, "limitBytes": MAX_QUEUE_BYTES, "unprocessedLoss": self.lost.load(Ordering::SeqCst)},
             "projection": projection, "coreDiagnostics": diagnostics,
             "pipeline": pipeline, "preview": preview, "renderReceipt": receipt,
-            "codexApprovalSync": {"enabled": self.codex_approval_sync, "sessions": approvals, "rejected": rejected},
+            "codexApprovalSync": {"enabled": self.codex_approval_sync, "sessions": approvals, "rejected": rejected, "metrics": metrics},
+            "banterOutcome": banter_outcome,
         }))
     }
     pub fn start(app: Option<AppHandle>, mode: &str) -> Result<Arc<Self>, String> {
-        #[cfg(windows)]
-        let approval_pipe =
-            (app.is_some() && !cfg!(feature = "e2e")).then_some(super::codex_approval::PIPE);
+        #[cfg(all(windows, not(feature = "e2e")))]
+        let approval_pipe = app.is_some().then_some(super::codex_approval::PIPE);
+        #[cfg(all(windows, feature = "e2e"))]
+        let test_pipe = std::env::var("CODE_MUSUME_E2E_CODEX_PIPE").ok();
+        #[cfg(all(windows, feature = "e2e"))]
+        let approval_pipe = test_pipe
+            .as_deref()
+            .filter(|path| app.is_some() && path.starts_with(r"\\.\pipe\code-musume-e2e-"));
         #[cfg(not(windows))]
         let approval_pipe = None;
         Self::start_with_approval_pipe(app, mode, approval_pipe)
@@ -222,7 +236,7 @@ impl Native {
         let (outcome_tx, mut outcome_rx) = mpsc::channel(4);
         let codex_approval_sync = approval_pipe.is_some();
         #[cfg(windows)]
-        let (rejections, approval_rejections) = watch::channel(Default::default());
+        let (sync_diagnostics, approval_diagnostics) = watch::channel(Default::default());
         #[cfg(windows)]
         if let Some(path) = approval_pipe.map(str::to_owned) {
             tauri::async_runtime::spawn(async move {
@@ -230,7 +244,7 @@ impl Native {
                     &path,
                     wanted,
                     approval_updates,
-                    rejections,
+                    sync_diagnostics,
                     capture_rx,
                     Some(progress_tx),
                 )
@@ -253,7 +267,7 @@ impl Native {
             pipeline: Mutex::new(PipelineDiagnostics::default()),
             codex_approval_sync,
             #[cfg(windows)]
-            approval_rejections,
+            approval_diagnostics,
             bytes: AtomicUsize::new(0),
             lost: AtomicU64::new(0),
             config: Mutex::new(config.clone()),
@@ -364,7 +378,7 @@ impl Native {
                         #[cfg(feature = "e2e")]
                         Some(Message::AdvanceClock(ms,reply))=>{state.clock.offset.fetch_add(ms,Ordering::SeqCst);engine.tick(state.clock.now());let _=reply.send(engine.snapshot());},
                         Some(Message::Diagnostics(reply))=>{let _=reply.send(engine.diagnostics());},
-                        Some(Message::Inspect(reply))=>{let _=reply.send((engine.snapshot(),engine.diagnostics(),engine.codex_approvals()));},
+                        Some(Message::Inspect(reply))=>{let _=reply.send((engine.snapshot(),engine.diagnostics(),engine.codex_approvals(),banter.outcome().to_owned()));},
                         Some(Message::Reset)=>{
                             engine.reset(now);
                             banter.clear();

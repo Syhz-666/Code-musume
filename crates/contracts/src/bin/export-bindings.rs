@@ -36,7 +36,9 @@ fn main() {
         BanterConfig,
         BanterProjection,
         BanterUsage,
-        BanterStatus
+        BanterStatus,
+        diagnostics::CodexSyncFailure,
+        diagnostics::CodexSyncMetrics
     );
     if let Some(parent) = target.parent() {
         fs::create_dir_all(parent).unwrap();

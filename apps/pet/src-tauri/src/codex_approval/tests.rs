@@ -6,6 +6,49 @@ use tokio::net::windows::named_pipe::{NamedPipeServer, ServerOptions};
 const MANUAL: &str = "item/commandExecution/requestApproval";
 
 #[test]
+fn replays_captured_v13_snapshot_and_incremental_visible_progress() {
+    let mut observer = Observer {
+        capture: true,
+        ..Default::default()
+    };
+    observer.streams.insert("fixture-thread".into(), None);
+    let mut visible = Vec::new();
+    let mut approvals = 0;
+    let frames = include_str!("../../../../../fixtures/codex-sync/progress-v13.jsonl");
+    for (index, line) in frames.lines().enumerate() {
+        let frame: Value = serde_json::from_str(line).unwrap();
+        let update = observer.frame(&frame);
+        assert!(
+            observer.streams["fixture-thread"].is_some(),
+            "missing state at frame {}",
+            index + 1
+        );
+        for event in update {
+            match event {
+                Observation::Progress(message) => visible.push(message),
+                Observation::Changed((_, Some(counts))) => {
+                    assert!(counts == state(0, 0, 0));
+                    approvals += 1;
+                }
+                _ => panic!(
+                    "unexpected recovery or approval loss at frame {}",
+                    index + 1
+                ),
+            }
+        }
+        assert!(
+            observer.frame(&frame).is_empty(),
+            "replayed frame {}",
+            index + 1
+        );
+    }
+    assert_eq!(frames.lines().count(), 35);
+    assert_eq!(approvals, 1);
+    assert!(matches!(&visible[..], [p] if p.session == "fixture-thread"
+        && p.turn == "id118" && p.text == "redacted progress text"));
+}
+
+#[test]
 fn captures_only_new_completed_visible_messages_from_local_patches() {
     let mut observer = Observer {
         capture: true,
@@ -204,19 +247,63 @@ fn rejected_frames_are_counted_before_the_first_snapshot() {
     let mut observer = Observer::default();
     observer.streams.insert("local-thread".into(), None);
     let mut incompatible = snapshot("local-thread", 1, json!({"requests":[],"turns":[]}));
-    incompatible["version"] = json!(SYNC_VERSION + 1);
+    incompatible["version"] = json!(12);
     assert!(observer.frame(&incompatible).is_empty());
     assert!(observer
         .frame(&snapshot("local-thread", 2, json!({"turns":[]})))
         .is_empty());
     assert!(
-        observer.rejected
+        observer.diagnostics.rejected
             == Rejections {
                 version: 1,
                 shape: 1,
                 revision: 0
             }
     );
+}
+
+#[test]
+fn a_new_protocol_needs_its_own_snapshot_without_replaying_history() {
+    let mut observer = Observer {
+        capture: true,
+        ..Default::default()
+    };
+    observer.streams.insert("local-thread".into(), None);
+    observer.streams.insert("another-thread".into(), None);
+    let state = json!({"requests":[],"turns":[{"turnId":"turn","status":"inProgress","items":[
+        {"type":"agentMessage","id":"before-reconnect","phase":"commentary","text":"old","completedAtMs":1}
+    ]}]});
+    for id in ["local-thread", "another-thread"] {
+        assert!(matches!(
+            &observer.frame(&snapshot(id, 21, state.clone()))[..],
+            [Observation::Changed((_, Some(_)))]
+        ));
+    }
+
+    let mut switched = delta("local-thread", 21, json!([]));
+    switched["version"] = json!(13);
+    assert!(matches!(
+        &observer.frame(&switched)[..],
+        [Observation::Changed((_, None)), Observation::Resync(_)]
+    ));
+    assert_eq!(
+        observer.diagnostics.metrics.last_failure,
+        Some(CodexSyncFailure::VersionChanged)
+    );
+    assert!(observer.frame(&switched).is_empty());
+    assert_eq!(
+        observer.streams["another-thread"].as_ref().unwrap().version,
+        11
+    );
+
+    let mut baseline = snapshot("local-thread", 1, state);
+    baseline["version"] = json!(13);
+    assert_change(observer.frame(&baseline), Some(self::state(0, 0, 0)));
+    assert_eq!(
+        observer.streams["local-thread"].as_ref().unwrap().version,
+        13
+    );
+    assert_eq!(observer.diagnostics.metrics.last_received_version, Some(13));
 }
 
 async fn read_peer(server: &mut NamedPipeServer) -> Value {
@@ -234,6 +321,27 @@ async fn write_peer(server: &mut NamedPipeServer, msg: Value) {
         .unwrap();
     server.write_all(&frame[..frame.len() / 2]).await.unwrap();
     server.write_all(&frame[frame.len() / 2..]).await.unwrap();
+}
+
+async fn accept_observer(server: &mut NamedPipeServer) {
+    server.connect().await.unwrap();
+    let init = read_peer(server).await;
+    assert_eq!(init["method"], "initialize");
+    assert_eq!(init["params"]["clientType"], "code-musume-observer");
+    write_peer(
+        server,
+        json!({
+            "type":"response","requestId":init["requestId"],"resultType":"success",
+            "result":{"clientId":"observer"}
+        }),
+    )
+    .await;
+    let follow = read_peer(server).await;
+    assert_eq!(follow["method"], "thread-stream-following-changed");
+    assert_eq!(
+        follow["params"],
+        json!({"hostId":"local","conversationId":"local-thread","following":true})
+    );
 }
 
 fn hook(event: &str) -> EnvelopeV2 {
@@ -259,6 +367,12 @@ fn hook(event: &str) -> EnvelopeV2 {
 
 #[test]
 fn named_pipe_delivery_drives_the_core_and_disconnect_clears_pending() {
+    for version in [11, 13] {
+        check_pipe_approval_lifecycle(version);
+    }
+}
+
+fn check_pipe_approval_lifecycle(version: u32) {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -269,23 +383,14 @@ fn named_pipe_delivery_drives_the_core_and_disconnect_clears_pending() {
             let mut server = ServerOptions::new().first_pipe_instance(true).create(&path).unwrap();
             let (_subscriptions, wanted) = watch::channel(vec!["local-thread".into()]);
             let (tx, mut updates) = mpsc::channel(8);
-            let (rejections, _rejected) = watch::channel(Rejections::default());
+            let (diagnostics, latest) = watch::channel(SyncDiagnostics::default());
             let (capture, capture_rx) = watch::channel(None);
+            let (text_tx, mut texts) = mpsc::channel(8);
+            let client_path = path.clone();
             let client = tokio::spawn(async move {
-                let _capture = capture;
-                observe(&path, wanted, tx, rejections, capture_rx, None).await
+                observe(&client_path, wanted, tx, diagnostics, capture_rx, Some(text_tx)).await
             });
-            server.connect().await.unwrap();
-            let init = read_peer(&mut server).await;
-            assert_eq!(init["method"], "initialize");
-            assert_eq!(init["params"]["clientType"], "code-musume-observer");
-            write_peer(&mut server, json!({
-                "type":"response","requestId":init["requestId"],"resultType":"success",
-                "result":{"clientId":"observer"}
-            })).await;
-            let follow = read_peer(&mut server).await;
-            assert_eq!(follow["method"], "thread-stream-following-changed");
-            assert_eq!(follow["params"], json!({"hostId":"local","conversationId":"local-thread","following":true}));
+            accept_observer(&mut server).await;
 
             let mut engine = Engine::new("test".into(), Config::default()).with_codex_approval_sync(true);
             engine.ingest(hook("UserPromptSubmit"), 0);
@@ -309,21 +414,72 @@ fn named_pipe_delivery_drives_the_core_and_disconnect_clears_pending() {
                 }])), DisplayState::Thinking),
                 (delta("local-thread", 3, json!([{"op":"add","path":["requests",0],"value":{"method":MANUAL}}])), DisplayState::WaitingPermission),
                 (delta("local-thread", 4, json!([{"op":"remove","path":["requests",0]}])), DisplayState::Thinking),
-                (delta("local-thread", 5, json!([{"op":"add","path":["requests",0],"value":{"method":MANUAL}}])), DisplayState::WaitingPermission),
+                (delta("local-thread", 5, json!([{"op":"add","path":["requests",0],"value":{"method":"item/tool/requestUserInput","params":{"isBlocking":true}}}])), DisplayState::WaitingPermission),
+                (delta("local-thread", 6, json!([{"op":"remove","path":["requests",0]}])), DisplayState::Thinking),
+                (delta("local-thread", 7, json!([
+                    {"op":"add","path":["requests",0],"value":{"method":MANUAL}},
+                    {"op":"add","path":["turnHistory","history","entitiesByKey",turn,"items",1],"value":{
+                        "type":"agentMessage","id":"disabled","phase":"commentary","text":"ignored","completedAtMs":2
+                    }}
+                ])), DisplayState::WaitingPermission),
             ];
-            for (step, (msg, expected)) in sequence.into_iter().enumerate() {
+            for (step, (mut msg, expected)) in sequence.into_iter().enumerate() {
+                msg["version"] = json!(version);
                 write_peer(&mut server, msg).await;
                 let (id, next) = updates.recv().await.unwrap();
                 engine.update_codex_approvals(id, next, step as u64 + 2);
                 assert_eq!(engine.snapshot().state, expected);
                 assert_eq!(engine.snapshot().pending_count, u32::from(expected == DisplayState::WaitingPermission));
             }
+            assert!(texts.try_recv().is_err());
             drop(server);
             let (id, next) = updates.recv().await.unwrap();
             assert!(next.is_none());
-            engine.update_codex_approvals(id, next, 8);
+            engine.update_codex_approvals(id, next, 12);
             assert_eq!(engine.snapshot().state, DisplayState::Thinking);
             assert_eq!(engine.snapshot().pending_count, 0);
+            assert_eq!(latest.borrow().metrics.last_failure, Some(CodexSyncFailure::Disconnected));
+
+            // A reconnect starts a new baseline even when its revision is lower.
+            capture.send_replace(Some(1));
+            let mut server = ServerOptions::new().first_pipe_instance(true).create(&path).unwrap();
+            accept_observer(&mut server).await;
+            let mut baseline = snapshot("local-thread", 1, json!({"requests":[],"turns":[{
+                "status":"inProgress","turnId":"turn","items":[
+                    {"type":"agentMessage","id":"old","phase":"commentary","completedAtMs":1,"text":"history"}
+                ]
+            }]}));
+            baseline["version"] = json!(version);
+            write_peer(&mut server, baseline.clone()).await;
+            let (_, next) = updates.recv().await.unwrap();
+            assert!(next == Some(state(0, 0, 0)));
+
+            let new_progress = |base: u64, index: u32| {
+                let mut message = delta("local-thread", base, json!([{
+                    "op":"add","path":["turns",0,"items",index],"value":{
+                        "type":"agentMessage","id":format!("new-{index}"),"phase":"commentary",
+                        "completedAtMs":2,"text":"new progress"
+                    }
+                }]));
+                message["version"] = json!(version);
+                message
+            };
+            write_peer(&mut server, new_progress(1, 1)).await;
+            let (generation, progress) = texts.recv().await.unwrap();
+            assert_eq!(generation, 1);
+            assert_eq!(progress.id, "new-1");
+
+            capture.send_replace(None);
+            // Re-enable requests a fresh snapshot and starts a new generation.
+            capture.send_replace(Some(2));
+            let refollow = read_peer(&mut server).await;
+            assert_eq!(refollow["method"], "thread-stream-following-changed");
+            baseline["params"]["change"]["revision"] = json!(3);
+            write_peer(&mut server, baseline).await;
+            write_peer(&mut server, new_progress(3, 1)).await;
+            let (generation, progress) = texts.recv().await.unwrap();
+            assert_eq!(generation, 2);
+            assert_eq!(progress.text, "new progress");
             client.abort();
         }).await.unwrap();
     });

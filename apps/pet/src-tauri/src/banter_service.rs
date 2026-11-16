@@ -87,6 +87,10 @@ impl Service {
             skipped_long: self.core.skipped_long,
         }
     }
+
+    pub fn outcome(&self) -> &str {
+        &self.outcome
+    }
     pub fn save(
         &mut self,
         mut config: BanterConfig,
@@ -278,6 +282,7 @@ impl Service {
         if let Some(request) = self.core.tick(target, now, can_request) {
             match self.key_for(&self.config) {
                 Ok(key) => {
+                    self.outcome = "正在请求总结".into();
                     let client = self.client.clone().unwrap();
                     let config = self.config.clone();
                     let outcomes = self.outcomes.clone();
@@ -297,6 +302,7 @@ impl Service {
         self.core.snapshot()
     }
     pub fn finish(&mut self, id: u64, result: Outcome, now: u64, observed: bool) {
+        let before = self.core.snapshot().revision;
         let text = observed
             .then(|| result.as_ref().ok().and_then(|(text, _)| text.clone()))
             .flatten();
@@ -306,8 +312,10 @@ impl Service {
         self.task = None;
         match result {
             Ok((text, usage)) => {
-                self.outcome = if text.is_some() {
+                self.outcome = if self.core.snapshot().revision != before {
                     "总结成功"
+                } else if text.is_some() {
+                    "已收到总结，当前无法展示"
                 } else {
                     "无可展示的短句"
                 }

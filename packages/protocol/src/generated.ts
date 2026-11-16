@@ -24,3 +24,5 @@ export type BanterConfig = { enabled: boolean, protocol: BanterProtocol, baseUrl
 export type BanterProjection = { instanceId: string, revision: number, agent: Agent | null, sessionLabel: string | null, text: string | null, expiresAtMs: number | null, };
 export type BanterUsage = { cacheRead: number | null, cacheWrite: number | null, ordinaryInput: number | null, totalInput: number | null, output: number | null, elapsedMs: number, };
 export type BanterStatus = { config: BanterConfig, hasKey: boolean, codexReady: boolean, claudeReady: boolean, outcome: string, skippedLong: number, usage: BanterUsage | null, };
+export type CodexSyncFailure = "unsupported-version" | "version-changed" | "invalid-frame" | "revision-gap" | "disconnected";
+export type CodexSyncMetrics = { lastReceivedVersion: number | null, supportedVersions: Array<number>, lastFailure: CodexSyncFailure | null, visibleMessages: number, lastVisibleAtUnixMs: number | null, };

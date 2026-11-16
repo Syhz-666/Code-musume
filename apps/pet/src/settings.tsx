@@ -3,6 +3,8 @@ import {
   type AnimationPreview,
   AnimationPreviewStore,
   type CharacterManifest,
+  type CodexSyncFailure,
+  type CodexSyncMetrics,
   type Config,
   type Diagnostic,
   type DisplayState,
@@ -36,17 +38,33 @@ const agentNames: Record<Agent, string> = { "claude-code": "Claude Code", codex:
 type CodexSync = {
   enabled: boolean;
   sessions: Record<string, { status: "observed" | "degraded" | "never" }>;
-  rejected: { version: number; shape: number; revision: number } | null;
+  metrics: CodexSyncMetrics | null;
+};
+const syncFailureText: Record<CodexSyncFailure, string> = {
+  "unsupported-version": "协议版本不受支持",
+  "version-changed": "协议版本变化，需重新同步",
+  "invalid-frame": "同步数据格式无法读取",
+  "revision-gap": "缺少中间更新，需重新同步",
+  disconnected: "桌面同步已断开",
 };
 function codexSyncText(sync: CodexSync) {
   if (!sync.enabled) return "未启用";
-  if (sync.rejected && sync.rejected.version > 0)
-    return "Codex 桌面版本与代码娘不兼容，等待提示改用 hook 推断";
   const sessions = Object.values(sync.sessions);
-  if (!sessions.length) return "尚无会话";
   const observed = sessions.filter((s) => s.status === "observed").length;
-  const degraded = sessions.some((s) => s.status === "degraded");
-  return `已同步 ${observed}/${sessions.length}${degraded ? "，部分会话失联，等待提示改用 hook 推断" : ""}`;
+  const metrics = sync.metrics;
+  const state = sessions.length ? `已同步 ${observed}/${sessions.length}` : "尚无会话";
+  const details = [state];
+  if (sessions.length > observed) details.push("未同步会话的等待提示使用 hook 推断");
+  if (metrics) {
+    details.push(
+      `收到的协议 ${metrics.lastReceivedVersion ?? "暂无"}（支持 ${metrics.supportedVersions.join(" / ")}）`,
+      `已采集 ${metrics.visibleMessages} 条进度`,
+    );
+    if (metrics.lastVisibleAtUnixMs != null)
+      details.push(`最近采集于 ${new Date(metrics.lastVisibleAtUnixMs).toLocaleString()}`);
+    if (metrics.lastFailure) details.push(`最近同步异常：${syncFailureText[metrics.lastFailure]}`);
+  }
+  return details.join("，");
 }
 function Settings() {
   const [p, setP] = useState(preview),

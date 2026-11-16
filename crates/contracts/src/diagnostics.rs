@@ -1,6 +1,31 @@
 //! Content-free diagnostics. Never serialize parser messages or input samples.
 use serde::Serialize;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+#[cfg_attr(feature = "bindings", derive(ts_rs::TS))]
+pub enum CodexSyncFailure {
+    UnsupportedVersion,
+    VersionChanged,
+    InvalidFrame,
+    RevisionGap,
+    Disconnected,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "bindings", derive(ts_rs::TS))]
+pub struct CodexSyncMetrics {
+    #[cfg_attr(feature = "bindings", ts(type = "number | null"))]
+    pub last_received_version: Option<u64>,
+    pub supported_versions: Vec<u32>,
+    pub last_failure: Option<CodexSyncFailure>,
+    #[cfg_attr(feature = "bindings", ts(type = "number"))]
+    pub visible_messages: u64,
+    #[cfg_attr(feature = "bindings", ts(type = "number | null"))]
+    pub last_visible_at_unix_ms: Option<u64>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InputDiagnostics {
