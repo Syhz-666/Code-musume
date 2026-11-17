@@ -6,6 +6,45 @@ use tokio::net::windows::named_pipe::{NamedPipeServer, ServerOptions};
 const MANUAL: &str = "item/commandExecution/requestApproval";
 
 #[test]
+fn takes_final_reply_from_terminal_patches_only_for_a_live_turn() {
+    for version in [11, 13] {
+        let mut observer = Observer {
+            capture: true,
+            ..Default::default()
+        };
+        observer.streams.insert("local-thread".into(), None);
+        let mut baseline = snapshot(
+            "local-thread",
+            1,
+            json!({"requests":[],"turns":[
+                {"turnId":"live","status":"inProgress","items":[]},
+                {"turnId":"history","status":"completed","items":[
+                    {"type":"agentMessage","phase":"final_answer","completedAtMs":1,"id":"old","text":"old reply"}
+                ]}
+            ]}),
+        );
+        baseline["version"] = json!(version);
+        assert_change(observer.frame(&baseline), Some(state(0, 0, 0)));
+        let mut final_frame = delta(
+            "local-thread",
+            1,
+            json!([
+                {"op":"replace","path":["turns",0,"status"],"value":"completed"},
+                {"op":"replace","path":["turns",1,"items",0,"text"],"value":"history update"},
+                {"op":"add","path":["turns",0,"items",0],"value":
+                    {"type":"agentMessage","phase":"final_answer","completedAtMs":3,"id":"new","text":"登录通过，保存还待验证。"}}
+            ]),
+        );
+        final_frame["version"] = json!(version);
+        let events = observer.frame(&final_frame);
+        assert!(
+            matches!(&events[..], [Observation::Progress(p)] if p.kind == BanterKind::Completion && p.turn == "live" && p.id == "new")
+        );
+        assert!(observer.frame(&final_frame).is_empty());
+    }
+}
+
+#[test]
 fn replays_captured_v13_snapshot_and_incremental_visible_progress() {
     let mut observer = Observer {
         capture: true,

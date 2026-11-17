@@ -411,11 +411,14 @@ function updateBubble() {
   const p = current;
   const summary =
     banter?.instanceId === p.instanceId &&
-    banter.agent === p.dominantAgent &&
-    banter.sessionLabel === p.sessionLabel &&
-    p.certainty !== "unknown" &&
-    (p.state === "working" || p.state === "thinking") &&
-    !manualPreviewActive()
+    !manualPreviewActive() &&
+    (banter.kind === "completion"
+      ? p.state === "idle" && !p.bubbleKey
+      : banter.kind === "progress" &&
+        banter.agent === p.dominantAgent &&
+        banter.sessionLabel === p.sessionLabel &&
+        p.certainty !== "unknown" &&
+        (p.state === "working" || p.state === "thinking"))
       ? banter.text
       : null;
   const status =

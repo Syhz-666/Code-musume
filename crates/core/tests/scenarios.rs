@@ -37,6 +37,51 @@ fn engine() -> Engine {
     Engine::new("test".into(), Config::default())
 }
 #[test]
+fn main_stop_is_attributed_once_and_other_work_takes_precedence() {
+    use code_musume_core::banter::{CompletionGate, Target};
+    let mut e = engine();
+    let cx = Agent::Codex;
+    let cc = Agent::ClaudeCode;
+    e.ingest(
+        event(cx, "UserPromptSubmit", "codex", "1", json!({}), "a"),
+        0,
+    );
+    e.ingest(event(cx, "Stop", "codex", "old", json!({}), "b"), 1);
+    assert!(e.take_completed_turn().is_none());
+    e.ingest(
+        event(cx, "Stop", "codex", "1", json!({"agent_id":"worker"}), "c"),
+        2,
+    );
+    assert!(e.take_completed_turn().is_none());
+    e.ingest(event(cx, "Stop", "codex", "1", json!({}), "d"), 3);
+    let t = e.take_completed_turn().unwrap();
+    assert!(t == Target(cx, "codex".into(), "1".into()));
+    assert!(e.completion_gate(&t, 3) == CompletionGate::Waiting);
+    e.ingest(event(cx, "Stop", "codex", "1", json!({}), "repeat"), 4);
+    assert!(e.take_completed_turn().is_none());
+    e.tick(3003);
+    assert!(e.completion_gate(&t, 3003) == CompletionGate::Idle);
+    e.ingest(
+        event(cc, "UserPromptSubmit", "claude", "2", json!({}), "e"),
+        3004,
+    );
+    assert!(e.completion_gate(&t, 3004) == CompletionGate::Blocked);
+    e.ingest(
+        event(cc, "StopFailure", "claude", "2", json!({}), "f"),
+        3005,
+    );
+    assert!(e.take_completed_turn().is_none());
+    e.ingest(
+        event(cc, "UserPromptSubmit", "claude", "3", json!({}), "g"),
+        3006,
+    );
+    e.ingest(
+        event(cc, "Stop", "claude", "3", json!({"prompt_id":null}), "h"),
+        3007,
+    );
+    assert!(e.take_completed_turn().is_none());
+}
+#[test]
 fn codex_desktop_approvals_do_not_clear_other_sources_or_create_sessions() {
     let mut e = engine().with_codex_approval_sync(true);
     let pending = CodexApprovals {

@@ -1,11 +1,11 @@
 //! Read-only observer of the desktop's local thread sync protocol.
 use code_musume_contracts::diagnostics::{CodexSyncFailure, CodexSyncMetrics};
-use code_musume_contracts::{Agent, VisibleProgress};
+use code_musume_contracts::{Agent, BanterKind, VisibleProgress};
 use code_musume_core::engine::CodexApprovals;
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, VecDeque},
     io,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -321,6 +321,7 @@ struct Stream {
     state: Value,
     counts: CodexApprovals,
     progress: Option<Value>,
+    progress_turns: VecDeque<String>,
 }
 
 #[derive(Default)]
@@ -336,7 +337,12 @@ enum Observation {
     Progress(VisibleProgress),
 }
 
-fn visible_messages(state: &mut Value, session: &str, baseline: bool) -> Vec<VisibleProgress> {
+fn visible_messages(
+    state: &mut Value,
+    session: &str,
+    baseline: bool,
+    observed: &mut VecDeque<String>,
+) -> Vec<VisibleProgress> {
     let turns: Vec<&mut Value> = if state
         .pointer("/turnHistory/history/entitiesByKey")
         .is_some()
@@ -356,11 +362,19 @@ fn visible_messages(state: &mut Value, session: &str, baseline: bool) -> Vec<Vis
     for turn in turns {
         let active = turn["status"] == "inProgress";
         let turn_id = turn["turnId"].as_str().unwrap_or("").to_owned();
+        if active && !turn_id.is_empty() && !observed.contains(&turn_id) {
+            if observed.len() >= 32 {
+                observed.pop_front();
+            }
+            observed.push_back(turn_id.clone());
+        }
+        let completed = turn["status"] == "completed" && observed.contains(&turn_id);
         let Some(items) = turn["items"].as_array_mut() else {
             continue;
         };
         for item in items {
-            let visible = active
+            let final_answer = item["phase"] == "final_answer";
+            let visible = (active || completed && final_answer)
                 && !turn_id.is_empty()
                 && item["type"] == "agentMessage"
                 && matches!(item["phase"].as_str(), Some("commentary" | "final_answer"));
@@ -380,6 +394,11 @@ fn visible_messages(state: &mut Value, session: &str, baseline: bool) -> Vec<Vis
                                 turn: turn_id.clone(),
                                 id: id.into(),
                                 text,
+                                kind: if final_answer {
+                                    BanterKind::Completion
+                                } else {
+                                    BanterKind::Progress
+                                },
                             });
                         }
                     }
@@ -467,7 +486,8 @@ impl Observer {
                     .filter(|s| s.version == version && revision <= s.revision)
                 {
                     if revision == stream.revision && self.capture && stream.progress.is_none() {
-                        stream.progress = Some(progress_baseline(change, id));
+                        stream.progress =
+                            Some(progress_baseline(change, id, &mut stream.progress_turns));
                     }
                     return Vec::new();
                 }
@@ -477,7 +497,10 @@ impl Observer {
                     self.diagnostics.metrics.last_failure = Some(CodexSyncFailure::InvalidFrame);
                     return invalidate(current, false);
                 };
-                let progress = self.capture.then(|| progress_baseline(change, id));
+                let mut progress_turns = VecDeque::new();
+                let progress = self
+                    .capture
+                    .then(|| progress_baseline(change, id, &mut progress_turns));
                 *current = Some(Stream {
                     owner: owner.into(),
                     version,
@@ -485,6 +508,7 @@ impl Observer {
                     state,
                     counts,
                     progress,
+                    progress_turns,
                 });
             }
             Some("patches") => {
@@ -526,9 +550,11 @@ impl Observer {
                 stream.counts = counts;
                 if let Some(progress) = &mut stream.progress {
                     if patches.iter().all(|p| apply(progress, p, true).is_some()) {
-                        messages = visible_messages(progress, id, false);
+                        messages =
+                            visible_messages(progress, id, false, &mut stream.progress_turns);
                     } else {
                         stream.progress = None;
+                        stream.progress_turns.clear();
                         self.diagnostics.rejected.shape += 1;
                         self.diagnostics.metrics.last_failure =
                             Some(CodexSyncFailure::InvalidFrame);
@@ -556,9 +582,10 @@ impl Observer {
     }
 }
 
-fn progress_baseline(change: &Value, id: &str) -> Value {
+fn progress_baseline(change: &Value, id: &str, observed: &mut VecDeque<String>) -> Value {
     let mut state = Shape::Root.redact(&change["conversationState"], true);
-    visible_messages(&mut state, id, true);
+    observed.clear();
+    visible_messages(&mut state, id, true, observed);
     state
 }
 
@@ -709,6 +736,7 @@ async fn connected(
                 observer.capture = generation.is_some();
                 for stream in observer.streams.values_mut().flatten() {
                     stream.progress = None;
+                    stream.progress_turns.clear();
                 }
                 if let Some(client) = &client {
                     if observer.capture {

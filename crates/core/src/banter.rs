@@ -1,5 +1,5 @@
 use crate::{adapter::short_hash, engine::MAX_SESSIONS};
-use code_musume_contracts::{Agent, BanterProjection, VisibleProgress};
+use code_musume_contracts::{Agent, BanterKind, BanterProjection, VisibleProgress};
 use std::collections::{BTreeMap, VecDeque};
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -10,19 +10,29 @@ const INTERVAL: u64 = 30_000;
 const QUIET: u64 = 120_000;
 const RETENTION: u64 = 600_000;
 const BUBBLE: u64 = 8_000;
+const FINAL_WINDOW: u64 = 2_000;
+const COMPLETION_DEADLINE: u64 = 20_000;
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct Target(pub Agent, pub String, pub String);
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum CompletionGate {
+    Waiting,
+    Idle,
+    Blocked,
+}
+
 #[derive(Clone)]
 pub enum Entry {
     Progress(String),
+    Final(String),
     Summary(String),
 }
 impl Entry {
     fn chars(&self) -> usize {
         match self {
-            Self::Progress(s) | Self::Summary(s) => s.chars().count(),
+            Self::Progress(s) | Self::Final(s) | Self::Summary(s) => s.chars().count(),
         }
     }
 }
@@ -47,6 +57,15 @@ struct InFlight {
     target: Target,
     version: u64,
     eligible: bool,
+    kind: BanterKind,
+}
+
+struct Completion {
+    target: Target,
+    ended_at: u64,
+    requested: bool,
+    result: Option<String>,
+    shown: bool,
 }
 
 pub struct Banter {
@@ -57,6 +76,11 @@ pub struct Banter {
     last_request: Option<u64>,
     request_id: u64,
     in_flight: Option<InFlight>,
+    finals: BTreeMap<(Agent, String), (String, String)>,
+    completion: Option<Completion>,
+    pub completion_phase: &'static str,
+    pub completion_requests: u64,
+    pub completion_shown: u64,
     view: BanterProjection,
     pub skipped_long: u32,
 }
@@ -71,12 +95,18 @@ impl Banter {
             last_request: None,
             request_id: 0,
             in_flight: None,
+            finals: BTreeMap::new(),
+            completion: None,
+            completion_phase: "idle",
+            completion_requests: 0,
+            completion_shown: 0,
             view: BanterProjection {
                 instance_id,
                 revision: 0,
                 agent: None,
                 session_label: None,
                 text: None,
+                kind: None,
                 expires_at_ms: None,
             },
             skipped_long: 0,
@@ -86,6 +116,9 @@ impl Banter {
         self.enabled = enabled;
         self.segments.clear();
         self.in_flight = None;
+        self.finals.clear();
+        self.completion = None;
+        self.completion_phase = "idle";
         self.target = None;
         self.clear();
     }
@@ -94,6 +127,7 @@ impl Banter {
     }
     pub fn retain(&mut self, keep: impl Fn(&(Agent, String)) -> bool) {
         self.segments.retain(|key, _| keep(key));
+        self.finals.retain(|key, _| keep(key));
     }
     pub fn ingest(&mut self, p: VisibleProgress, now: u64) {
         if !self.enabled || p.text.trim().is_empty() {
@@ -104,6 +138,10 @@ impl Banter {
             return;
         }
         let key = (p.agent, p.session);
+        if p.kind == BanterKind::Completion {
+            self.finals.insert(key, (p.turn, p.text));
+            return;
+        }
         if !self.segments.contains_key(&key) && self.segments.len() >= MAX_SESSIONS {
             return;
         }
@@ -147,9 +185,134 @@ impl Banter {
             .is_some_and(|t| t.0 == key.0 && t.1 == key.1 && t.2 == p.turn)
         {
             self.quiet_since = now;
-            self.clear();
+            self.clear_progress();
         }
     }
+    pub fn discard_final(&mut self, agent: Agent, session: &str) {
+        self.finals.remove(&(agent, session.into()));
+    }
+
+    pub fn retain_finals(&mut self, mut keep: impl FnMut(Agent, &str, &str) -> bool) {
+        self.finals
+            .retain(|(agent, session), (turn, _)| keep(*agent, session, turn));
+    }
+
+    pub fn completed(&mut self, target: Target, now: u64) -> bool {
+        if !self.enabled {
+            return false;
+        }
+        let mut abort_task = self.cancel_completion("superseded");
+        if self.in_flight.as_ref().is_some_and(|f| f.target == target) {
+            self.in_flight = None;
+            abort_task = true;
+        }
+        self.completion = Some(Completion {
+            target,
+            ended_at: now,
+            requested: false,
+            result: None,
+            shown: false,
+        });
+        self.completion_phase = "awaiting-final";
+        abort_task
+    }
+
+    pub fn completion_target(&self) -> Option<&Target> {
+        self.completion.as_ref().map(|c| &c.target)
+    }
+
+    pub fn accepts_final(&self, agent: Agent, session: &str, turn: &str, now: u64) -> bool {
+        self.completion.as_ref().is_some_and(|c| {
+            c.target.0 == agent
+                && c.target.1 == session
+                && c.target.2 == turn
+                && !c.requested
+                && now <= c.ended_at + FINAL_WINDOW
+        })
+    }
+
+    pub fn cancel_completion(&mut self, reason: &'static str) -> bool {
+        let Some(c) = self.completion.take() else {
+            return false;
+        };
+        self.discard_final(c.target.0, &c.target.1);
+        self.completion_phase = reason;
+        if self.view.kind == Some(BanterKind::Completion) {
+            self.clear();
+        }
+        let abort = self
+            .in_flight
+            .as_ref()
+            .is_some_and(|f| f.kind == BanterKind::Completion);
+        if abort {
+            self.in_flight = None;
+        }
+        abort
+    }
+
+    pub fn tick_completion(
+        &mut self,
+        gate: CompletionGate,
+        now: u64,
+        can_request: bool,
+    ) -> (Option<Request>, bool) {
+        let Some(c) = self.completion.as_mut() else {
+            return (None, false);
+        };
+        if gate == CompletionGate::Blocked {
+            return (None, self.cancel_completion("preempted"));
+        }
+        if c.shown {
+            if self.view.expires_at_ms.is_some_and(|end| now >= end) {
+                self.cancel_completion("expired");
+            }
+            return (None, false);
+        }
+        if now >= c.ended_at + COMPLETION_DEADLINE {
+            return (None, self.cancel_completion("deadline"));
+        }
+        if gate == CompletionGate::Idle && now >= c.ended_at + crate::engine::DONE_MS {
+            if let Some(text) = c.result.take() {
+                let target = c.target.clone();
+                c.shown = true;
+                self.completion_phase = "shown";
+                self.completion_shown += 1;
+                self.show(&target, text, now, BanterKind::Completion);
+                return (None, false);
+            }
+        }
+        let key = (c.target.0, c.target.1.clone());
+        let has_final = self
+            .finals
+            .get(&key)
+            .is_some_and(|(turn, _)| *turn == c.target.2);
+        if !c.requested && !has_final && now > c.ended_at + FINAL_WINDOW {
+            return (None, self.cancel_completion("no-final"));
+        }
+        if !c.requested && has_final && can_request && self.in_flight.is_none() {
+            let (_, text) = self.finals.remove(&key).unwrap();
+            c.requested = true;
+            self.request_id += 1;
+            self.completion_phase = "requested";
+            self.completion_requests += 1;
+            self.in_flight = Some(InFlight {
+                id: self.request_id,
+                target: c.target.clone(),
+                version: 0,
+                eligible: true,
+                kind: BanterKind::Completion,
+            });
+            return (
+                Some(Request {
+                    id: self.request_id,
+                    entries: vec![Entry::Final(text)],
+                }),
+                false,
+            );
+        }
+        (None, false)
+    }
+
     pub fn tick(&mut self, target: Option<Target>, now: u64, can_request: bool) -> Option<Request> {
         self.segments
             .retain(|_, s| now.saturating_sub(s.updated) < RETENTION);
@@ -157,13 +320,17 @@ impl Banter {
         if self.target != target {
             self.target = target;
             self.quiet_since = now;
-            if let Some(flight) = &mut self.in_flight {
+            if let Some(flight) = self
+                .in_flight
+                .as_mut()
+                .filter(|f| f.kind == BanterKind::Progress)
+            {
                 flight.eligible = false;
             }
-            self.clear();
+            self.clear_progress();
         }
         if self.view.expires_at_ms.is_some_and(|end| now >= end) {
-            self.clear();
+            self.clear_progress();
         }
         let target = self.target.clone()?;
         let segment = self.segments.get_mut(&(target.0, target.1.clone()));
@@ -184,6 +351,7 @@ impl Banter {
                     target,
                     version: segment.version,
                     eligible: true,
+                    kind: BanterKind::Progress,
                 });
                 return Some(Request {
                     id: self.request_id,
@@ -193,7 +361,12 @@ impl Banter {
         }
         if now.saturating_sub(self.quiet_since) >= QUIET {
             self.quiet_since = now;
-            self.show(&target, "还没新进展，我陪你等会儿。".into(), now);
+            self.show(
+                &target,
+                "还没新进展，我陪你等会儿。".into(),
+                now,
+                BanterKind::Progress,
+            );
         }
         None
     }
@@ -202,6 +375,22 @@ impl Banter {
             return false;
         }
         let flight = self.in_flight.take().unwrap();
+        if flight.kind == BanterKind::Completion {
+            let summary = text.and_then(clean_summary);
+            if summary.is_none() {
+                self.cancel_completion("no-summary");
+                return true;
+            }
+            if let Some(c) = self
+                .completion
+                .as_mut()
+                .filter(|c| now < c.ended_at + COMPLETION_DEADLINE)
+            {
+                c.result = summary;
+                self.completion_phase = "ready";
+            }
+            return true;
+        }
         let Some(segment) = self
             .segments
             .get_mut(&(flight.target.0, flight.target.1.clone()))
@@ -214,24 +403,31 @@ impl Banter {
                     segment.last_summary = Some(text.clone());
                     segment.entries.push(Entry::Summary(text.clone()));
                     if self.target.as_ref() == Some(&flight.target) {
-                        self.show(&flight.target, text, now);
+                        self.show(&flight.target, text, now, BanterKind::Progress);
                     }
                 }
             }
         }
         true
     }
-    fn show(&mut self, target: &Target, text: String, now: u64) {
+    fn show(&mut self, target: &Target, text: String, now: u64, kind: BanterKind) {
         self.view.revision += 1;
         self.view.agent = Some(target.0);
         self.view.session_label = Some(short_hash(&target.1));
         self.view.text = Some(text);
+        self.view.kind = Some(kind);
         self.view.expires_at_ms = Some(now + BUBBLE);
+    }
+    fn clear_progress(&mut self) {
+        if self.view.kind == Some(BanterKind::Progress) {
+            self.clear();
+        }
     }
     fn clear(&mut self) {
         if self.view.text.take().is_some() {
             self.view.revision += 1;
             self.view.agent = None;
+            self.view.kind = None;
             self.view.session_label = None;
             self.view.expires_at_ms = None;
         }
@@ -256,6 +452,100 @@ pub fn clean_summary(text: String) -> Option<String> {
 mod tests {
     use super::*;
 
+    fn final_text(b: &mut Banter, turn: &str, now: u64) {
+        b.ingest(
+            VisibleProgress {
+                agent: Agent::Codex,
+                session: "same-session".into(),
+                turn: turn.into(),
+                id: format!("final-{turn}"),
+                text: "登录通过，保存还待验证。".into(),
+                kind: BanterKind::Completion,
+            },
+            now,
+        );
+    }
+
+    #[test]
+    fn completion_bypasses_progress_interval_but_waits_for_done_and_expires() {
+        let mut b = Banter::new("test".into(), true);
+        progress(&mut b, Agent::Codex, "one", "draft", "checking", 0);
+        let t = target(Agent::Codex, "one").unwrap();
+        let work = b.tick(Some(t.clone()), 0, true).unwrap();
+        final_text(&mut b, "one", 10);
+        assert!(b.completed(t, 100));
+        assert!(!b.finish(work.id, Some("还在检查。".into()), 110));
+        let complete = b
+            .tick_completion(CompletionGate::Waiting, 120, true)
+            .0
+            .unwrap();
+        assert!(
+            matches!(&complete.entries[..], [Entry::Final(text)] if text.contains("保存还待验证"))
+        );
+        assert!(b
+            .tick_completion(CompletionGate::Waiting, 125, true)
+            .0
+            .is_none());
+        assert!(b.finish(complete.id, Some("登录过啦，保存还待查。".into()), 130));
+        b.tick_completion(CompletionGate::Idle, 3099, true);
+        assert!(b.snapshot().text.is_none());
+        b.tick_completion(CompletionGate::Idle, 3100, true);
+        assert_eq!(b.snapshot().kind, Some(BanterKind::Completion));
+        assert_eq!(b.snapshot().expires_at_ms, Some(11100));
+        b.tick_completion(CompletionGate::Idle, 11100, true);
+        assert!(b.snapshot().text.is_none());
+        assert_eq!(b.completion_requests, 1);
+        assert_eq!(b.completion_shown, 1);
+    }
+
+    #[test]
+    fn completion_handles_missing_late_preempted_and_failed_results() {
+        let mut b = Banter::new("test".into(), true);
+        let t = target(Agent::Codex, "one").unwrap();
+        b.completed(t.clone(), 0);
+        assert!(b.accepts_final(Agent::Codex, "same-session", "one", 2000));
+        assert!(!b.accepts_final(Agent::Codex, "same-session", "one", 2001));
+        assert!(!b.accepts_final(Agent::Codex, "same-session", "other", 1));
+        b.tick_completion(CompletionGate::Waiting, 2001, true);
+        assert_eq!(b.completion_phase, "no-final");
+
+        b.completed(t.clone(), 3000);
+        final_text(&mut b, "one", 4500);
+        assert!(b
+            .tick_completion(CompletionGate::Idle, 6000, false)
+            .0
+            .is_none());
+        let request = b
+            .tick_completion(CompletionGate::Idle, 6100, true)
+            .0
+            .unwrap();
+        assert!(b.tick_completion(CompletionGate::Blocked, 6200, true).1);
+        assert!(!b.finish(request.id, Some("晚到的结果。".into()), 6300));
+
+        b.completed(t.clone(), 7000);
+        final_text(&mut b, "one", 7000);
+        let request = b
+            .tick_completion(CompletionGate::Waiting, 7000, true)
+            .0
+            .unwrap();
+        b.finish(request.id, None, 7001);
+        assert_eq!(b.completion_phase, "no-summary");
+        assert!(b
+            .tick_completion(CompletionGate::Idle, 10000, true)
+            .0
+            .is_none());
+
+        b.completed(t, 11000);
+        final_text(&mut b, "one", 11000);
+        let request = b
+            .tick_completion(CompletionGate::Waiting, 11000, true)
+            .0
+            .unwrap();
+        assert!(b.tick_completion(CompletionGate::Idle, 31000, true).1);
+        assert!(!b.finish(request.id, Some("已经迟到了。".into()), 31001));
+        assert!(b.snapshot().text.is_none());
+    }
+
     fn progress(b: &mut Banter, agent: Agent, turn: &str, id: &str, text: &str, now: u64) {
         b.ingest(
             VisibleProgress {
@@ -264,6 +554,7 @@ mod tests {
                 turn: turn.into(),
                 id: id.into(),
                 text: text.into(),
+                kind: BanterKind::Progress,
             },
             now,
         );

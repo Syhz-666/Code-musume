@@ -33,6 +33,7 @@ fn main() {
         InstallPreview,
         HookStatus,
         BanterProtocol,
+        BanterKind,
         BanterConfig,
         BanterProjection,
         BanterUsage,

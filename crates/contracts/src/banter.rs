@@ -30,6 +30,17 @@ pub struct VisibleProgress {
     pub turn: String,
     pub id: String,
     pub text: String,
+    #[serde(default)]
+    pub kind: BanterKind,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+#[cfg_attr(feature = "bindings", derive(ts_rs::TS))]
+pub enum BanterKind {
+    #[default]
+    Progress,
+    Completion,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -42,6 +53,7 @@ pub struct BanterProjection {
     pub agent: Option<Agent>,
     pub session_label: Option<String>,
     pub text: Option<String>,
+    pub kind: Option<BanterKind>,
     #[cfg_attr(feature = "bindings", ts(type = "number | null"))]
     pub expires_at_ms: Option<u64>,
 }

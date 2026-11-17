@@ -1,4 +1,4 @@
-use code_musume_contracts::{Agent, VisibleProgress};
+use code_musume_contracts::{Agent, BanterKind, VisibleProgress};
 use serde_json::Value;
 use std::{
     fs::File,
@@ -105,7 +105,16 @@ impl Transcript {
                             && row["sessionId"].as_str() == Some(session)
                         {
                             if let Some(turn) = row["promptId"].as_str() {
-                                self.current_turn = turn == self.turn;
+                                if turn != self.turn {
+                                    self.current_turn = false;
+                                }
+                            } else if row.pointer("/message/content").is_some_and(|content| {
+                                content.is_string()
+                                    || content.as_array().is_some_and(|blocks| {
+                                        blocks.iter().any(|block| block["type"] == "text")
+                                    })
+                            }) {
+                                self.current_turn = false;
                             }
                         }
                         if self.current_turn {
@@ -133,10 +142,14 @@ fn extract(row: &Value, session: &str, turn: &str) -> Option<VisibleProgress> {
         || row["isSidechain"] != false
         || row["sessionId"].as_str()? != session
         || message["role"] != "assistant"
-        || message["stop_reason"].as_str() != Some("tool_use")
     {
         return None;
     }
+    let kind = match message["stop_reason"].as_str()? {
+        "tool_use" => BanterKind::Progress,
+        "end_turn" => BanterKind::Completion,
+        _ => return None,
+    };
     let id = row["uuid"].as_str()?;
     uuid::Uuid::parse_str(id).ok()?;
     let text = message["content"]
@@ -152,6 +165,7 @@ fn extract(row: &Value, session: &str, turn: &str) -> Option<VisibleProgress> {
         turn: turn.into(),
         id: id.into(),
         text,
+        kind,
     })
 }
 
@@ -190,7 +204,28 @@ mod tests {
         assert!(tail.read(&session).unwrap().is_empty());
         file.write_all(&bytes[bytes.len() / 2..]).unwrap();
         writeln!(file).unwrap();
-        assert_eq!(tail.read(&session).unwrap()[0].text, "Checking the setting");
+        let messages = tail.read(&session).unwrap();
+        assert_eq!(messages[0].text, "Checking the setting");
+        assert_eq!(messages[0].kind, BanterKind::Progress);
+        let fixture: Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/hooks/claude-final-2.1.295.json"
+        ))
+        .unwrap();
+        let mut final_row = fixture["row"].clone();
+        final_row["sessionId"] = json!(session);
+        writeln!(file, "{final_row}").unwrap();
+        let messages = tail.read(&session).unwrap();
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].kind, BanterKind::Completion);
+        assert_eq!(messages[0].text, "登录通过，保存还待验证。");
+        writeln!(
+            file,
+            "{}",
+            json!({"type":"user","sessionId":session,"isSidechain":false,"promptId":"next"})
+        )
+        .unwrap();
+        writeln!(file, "{final_row}").unwrap();
+        assert!(tail.read(&session).unwrap().is_empty());
         assert!(tail.read(&session).unwrap().is_empty());
         file.set_len(0).unwrap();
         assert!(tail.read(&session).unwrap().is_empty());

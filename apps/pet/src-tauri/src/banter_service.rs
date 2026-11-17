@@ -4,11 +4,12 @@ use crate::{
     claude_progress::Transcript,
 };
 use code_musume_contracts::{
-    Agent, BanterConfig, BanterProjection, BanterStatus, BanterUsage, EnvelopeV2, VisibleProgress,
+    Agent, BanterConfig, BanterKind, BanterProjection, BanterStatus, BanterUsage, EnvelopeV2,
+    VisibleProgress,
 };
 use code_musume_core::{
     adapter::{normalize, Kind},
-    banter::{Banter, Entry, Target},
+    banter::{Banter, CompletionGate, Entry, Target},
     Engine,
 };
 use code_musume_hook::runtime::{atomic_write, config_dir};
@@ -150,9 +151,7 @@ impl Service {
         Ok(self.status())
     }
     pub fn clear(&mut self) {
-        if let Some(task) = self.task.take() {
-            task.abort();
-        }
+        self.abort_task();
         self.generation += 1;
         let enabled = self.config.enabled && self.has_key;
         self.capture
@@ -197,8 +196,8 @@ impl Service {
             self.outcome = "连接测试成功".into();
         }
     }
-    pub fn hook(&mut self, envelope: &EnvelopeV2, engine: &Engine) {
-        if !self.config.enabled || !self.has_key || envelope.agent != Agent::ClaudeCode {
+    pub fn hook(&mut self, envelope: &EnvelopeV2, engine: &Engine, applied: bool) {
+        if !self.config.enabled || !self.has_key || !applied {
             return;
         }
         let Ok(Some(event)) = normalize(envelope) else {
@@ -209,8 +208,18 @@ impl Service {
         }
         if matches!(
             event.kind,
-            Kind::SessionEnd | Kind::Done | Kind::Error | Kind::Interrupt
+            Kind::Prompt | Kind::SessionEnd | Kind::Error | Kind::Interrupt
         ) {
+            self.core.discard_final(event.agent, &event.session);
+        }
+        if event.agent != Agent::ClaudeCode {
+            return;
+        }
+        if event.kind == Kind::Done {
+            // Stop can precede the final JSONL record. refresh retains only the accepted turn.
+            return;
+        }
+        if matches!(event.kind, Kind::SessionEnd | Kind::Error | Kind::Interrupt) {
             if engine.active_turn(event.agent, &event.session).is_none() {
                 self.transcripts.remove(&event.session);
             }
@@ -237,10 +246,32 @@ impl Service {
             self.claude_ready = true;
         }
     }
+    pub fn completed(&mut self, target: Target, now: u64) {
+        if self.core.completed(target, now) {
+            self.abort_task();
+        }
+    }
+
+    fn abort_task(&mut self) {
+        if let Some(task) = self.task.take() {
+            task.abort();
+        }
+    }
+
+    pub fn completion_diagnostics(&self) -> serde_json::Value {
+        serde_json::json!({
+            "phase": self.core.completion_phase,
+            "requests": self.core.completion_requests,
+            "shown": self.core.completion_shown,
+        })
+    }
+
     pub fn progress(&mut self, generation: u64, engine: &Engine, p: VisibleProgress, now: u64) {
         if generation == self.generation
             && self.config.enabled
-            && engine.active_turn(p.agent, &p.session) == Some(p.turn.as_str())
+            && (engine.active_turn(p.agent, &p.session) == Some(p.turn.as_str())
+                || p.kind == BanterKind::Completion
+                    && self.core.accepts_final(p.agent, &p.session, &p.turn, now))
         {
             if p.agent == Agent::Codex {
                 self.codex_ready = true;
@@ -257,16 +288,29 @@ impl Service {
     ) -> BanterProjection {
         self.core
             .retain(|key| engine.tracked_sessions().any(|tracked| tracked == key));
-        self.transcripts
-            .retain(|id, t| engine.active_turn(Agent::ClaudeCode, id) == Some(t.turn()));
+        let finishing = self.core.completion_target().cloned();
+        self.core.retain_finals(|agent, session, turn| {
+            engine.active_turn(agent, session) == Some(turn)
+                || finishing
+                    .as_ref()
+                    .is_some_and(|t| t.0 == agent && t.1 == session && t.2 == turn)
+        });
+        self.transcripts.retain(|id, t| {
+            engine.active_turn(Agent::ClaudeCode, id) == Some(t.turn())
+                || self
+                    .core
+                    .accepts_final(Agent::ClaudeCode, id, t.turn(), now)
+        });
         if dispatch && now.saturating_sub(self.last_poll) >= 500 {
             self.last_poll = now;
+            let mut batch = Vec::new();
             for (id, t) in &mut self.transcripts {
                 if let Ok(messages) = t.read(id) {
-                    for message in messages {
-                        self.core.ingest(message, now);
-                    }
+                    batch.extend(messages);
                 }
+            }
+            for message in batch {
+                self.progress(self.generation, engine, message, now);
             }
         }
         let target = (!preview)
@@ -279,7 +323,26 @@ impl Service {
             && self.has_key
             && !self.auth_failed
             && now >= self.cooldown;
-        if let Some(request) = self.core.tick(target, now, can_request) {
+        let gate = self
+            .core
+            .completion_target()
+            .map_or(CompletionGate::Blocked, |target| {
+                if preview {
+                    CompletionGate::Blocked
+                } else {
+                    engine.completion_gate(target, now)
+                }
+            });
+        let shown = self.core.completion_shown;
+        let (completion, abort) = self.core.tick_completion(gate, now, can_request);
+        if abort {
+            self.abort_task();
+        }
+        if self.core.completion_shown != shown {
+            self.outcome = "完成小结已显示".into();
+        }
+        let progress = self.core.tick(target, now, can_request);
+        if let Some(request) = completion.or(progress) {
             match self.key_for(&self.config) {
                 Ok(key) => {
                     self.outcome = "正在请求总结".into();
@@ -314,6 +377,8 @@ impl Service {
             Ok((text, usage)) => {
                 self.outcome = if self.core.snapshot().revision != before {
                     "总结成功"
+                } else if self.core.completion_phase == "ready" {
+                    "完成小结已生成"
                 } else if text.is_some() {
                     "已收到总结，当前无法展示"
                 } else {

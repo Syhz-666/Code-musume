@@ -1,4 +1,7 @@
-use crate::adapter::{normalize, short_hash, CanonicalEvent, Kind};
+use crate::{
+    adapter::{normalize, short_hash, CanonicalEvent, Kind},
+    banter::{CompletionGate, Target},
+};
 use code_musume_contracts::*;
 use std::collections::{BTreeMap, VecDeque};
 
@@ -212,6 +215,7 @@ impl Session {
 }
 
 pub struct Engine {
+    completed_turn: Option<Target>,
     sessions: BTreeMap<SessionKey, Session>,
     seen: VecDeque<String>,
     dominant: Option<SessionKey>,
@@ -228,6 +232,7 @@ pub struct Engine {
 impl Engine {
     pub fn new(instance_id: String, config: Config) -> Self {
         Self {
+            completed_turn: None,
             sessions: BTreeMap::new(),
             seen: VecDeque::new(),
             dominant: None,
@@ -272,6 +277,47 @@ impl Engine {
             .actors
             .get("@main")?;
         actor.active.then_some(actor.turn.as_deref()).flatten()
+    }
+
+    pub fn take_completed_turn(&mut self) -> Option<Target> {
+        self.completed_turn.take()
+    }
+
+    pub fn completion_gate(&self, target: &Target, now: u64) -> CompletionGate {
+        let key = (target.0, target.1.clone());
+        let Some(session) = self.sessions.get(&key).filter(|s| !s.ended) else {
+            return CompletionGate::Blocked;
+        };
+        if session.degraded
+            || session.ambiguous
+            || !session
+                .actors
+                .get("@main")
+                .is_some_and(|a| a.closed_turns.contains(&target.2))
+            || self.sessions.values().filter(|s| !s.ended).any(|s| {
+                let (_, certainty, _) = s.view(now);
+                s.pending() > 0
+                    || s.notices.iter().any(|n| {
+                        n.until > now
+                            && (n.state != DisplayState::Done || !std::ptr::eq(s, session))
+                    })
+                    || certainty != Certainty::Unknown
+                        && (s.background > 0
+                            || s.codex_approvals.is_some_and(|a| a.0.automatic > 0)
+                            || s.actors.values().any(|actor| {
+                                actor.active
+                                    || actor.compacting
+                                    || actor.tools.values().any(|tool| !tool.terminal)
+                            }))
+            })
+        {
+            return CompletionGate::Blocked;
+        }
+        match self.projection.state {
+            DisplayState::Done if self.dominant.as_ref() == Some(&key) => CompletionGate::Waiting,
+            DisplayState::Idle if self.projection.bubble_key.is_none() => CompletionGate::Idle,
+            _ => CompletionGate::Blocked,
+        }
     }
     pub fn tracked_sessions(&self) -> impl Iterator<Item = &(Agent, String)> {
         self.sessions.keys()
@@ -389,12 +435,14 @@ impl Engine {
     }
     pub fn reset(&mut self, now: u64) {
         self.sessions.clear();
+        self.completed_turn = None;
         self.dominant = None;
         self.missed = 0;
         self.last_activity = now;
         self.tick(now);
     }
     pub fn ingest(&mut self, envelope: EnvelopeV2, now: u64) {
+        self.completed_turn = None;
         self.seq += 1;
         if self.seen.contains(&envelope.id) {
             self.log(Some(envelope.agent), &envelope.event, None, "duplicate");
@@ -437,9 +485,25 @@ impl Engine {
                     .sessions
                     .entry(key)
                     .or_insert_with(|| Session::new(now));
+                let ending = (envelope.event == "Stop"
+                    && e.kind == Kind::Done
+                    && e.actor.is_none()
+                    && !s.degraded
+                    && !s.ambiguous)
+                    .then(|| {
+                        s.actors
+                            .get("@main")
+                            .filter(|actor| actor.active)?
+                            .turn
+                            .clone()
+                    })
+                    .flatten()
+                    .filter(|turn| e.turn.as_ref() == Some(turn));
                 let outcome = Self::apply(s, &e, now);
                 if outcome == "applied" {
                     self.last_activity = now;
+                    self.completed_turn =
+                        ending.map(|turn| Target(e.agent, e.session.clone(), turn));
                 }
                 self.log(Some(e.agent), &envelope.event, Some(&e.session), outcome);
             }

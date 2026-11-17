@@ -32,6 +32,7 @@ type Inspection = (
     Vec<Diagnostic>,
     BTreeMap<String, CodexApprovalStatus>,
     String,
+    serde_json::Value,
 );
 
 enum Message {
@@ -166,7 +167,7 @@ impl Native {
             .send(Message::Inspect(tx))
             .await
             .map_err(|_| "核心已停止")?;
-        let (projection, diagnostics, approvals, banter_outcome) =
+        let (projection, diagnostics, approvals, banter_outcome, completion) =
             rx.await.map_err(|_| "核心已停止")?;
         let pipeline = self.pipeline.lock().unwrap().snapshot();
         let preview = self.animation_preview.lock().unwrap().snapshot();
@@ -191,6 +192,7 @@ impl Native {
             "pipeline": pipeline, "preview": preview, "renderReceipt": receipt,
             "codexApprovalSync": {"enabled": self.codex_approval_sync, "sessions": approvals, "rejected": rejected, "metrics": metrics},
             "banterOutcome": banter_outcome,
+            "banterCompletion": completion,
         }))
     }
     pub fn start(app: Option<AppHandle>, mode: &str) -> Result<Arc<Self>, String> {
@@ -342,8 +344,12 @@ impl Native {
                             received=Some(at);state.bytes.fetch_sub(size,Ordering::SeqCst);
                             let mut trace=PipelineTrace::event("core","processed",&e);
                             trace.before=Some((&engine.snapshot()).into());
-                            engine.ingest(e.clone(),state.clock.now());
-                            banter.hook(&e, &engine);
+                            let event_now = state.clock.now();
+                            engine.ingest(e.clone(),event_now);
+                            if let Some(turn) = engine.take_completed_turn() {
+                                banter.completed(turn, event_now);
+                            }
+                            banter.hook(&e, &engine, engine.latest_diagnostic().is_some_and(|d| d.outcome == "applied"));
                             if codex_approval_sync {
                                 codex_sessions.send_if_modified(|wanted| {
                                     let next = engine.codex_sessions();
@@ -412,7 +418,7 @@ impl Native {
                         #[cfg(feature = "e2e")]
                         Some(Message::AdvanceClock(ms,reply))=>{state.clock.advance(ms);engine.tick(state.clock.now());let _=reply.send(engine.snapshot());},
                         Some(Message::Diagnostics(reply))=>{let _=reply.send(engine.diagnostics());},
-                        Some(Message::Inspect(reply))=>{let _=reply.send((engine.snapshot(),engine.diagnostics(),engine.codex_approvals(),banter.outcome().to_owned()));},
+                        Some(Message::Inspect(reply))=>{let _=reply.send((engine.snapshot(),engine.diagnostics(),engine.codex_approvals(),banter.outcome().to_owned(),banter.completion_diagnostics()));},
                         Some(Message::Reset)=>{
                             engine.reset(now);
                             banter.clear();

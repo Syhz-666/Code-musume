@@ -1,0 +1,16 @@
+{
+  "provenance": "real-redacted",
+  "agentVersion": "Claude Code 2.1.295",
+  "note": "Final main transcript row from the isolated fixture read. IDs and text replaced; unrelated fields removed. Prompt and Stop supplied the same prompt_id; the assistant transcript row itself had no promptId.",
+  "row": {
+    "type": "assistant",
+    "isSidechain": false,
+    "sessionId": "00000000-0000-4000-8000-000000000001",
+    "uuid": "00000000-0000-4000-8000-000000000002",
+    "message": {
+      "role": "assistant",
+      "stop_reason": "end_turn",
+      "content": [{ "type": "text", "text": "登录通过，保存还待验证。" }]
+    }
+  }
+}
