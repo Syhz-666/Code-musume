@@ -39,4 +39,5 @@ Thumbs.db
 Desktop.ini
 .test-artifacts/
 /artifacts/
+/skills/
 .DS_Store
