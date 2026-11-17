@@ -5,7 +5,9 @@ import { hook, nativeInvoke, pet, runDir, selectWindow } from "../helpers.mjs";
 
 describe("System reduced-motion preference", () => {
   it("keeps both renderers still when the application animation preference is off", async () => {
-    await browser.setTimeout({ script: 2000 });
+    // 共享 CI 机器上的渲染尖峰会让 IPC 往返超过 2s；放宽到与 wdio 的
+    // waitforTimeout 一致，真正的卡死仍由 mocha 的用例超时兜底。
+    await browser.setTimeout({ script: 10000 });
     await selectWindow("pet");
     assert.equal(
       await browser.execute(() => matchMedia("(prefers-reduced-motion: reduce)").matches),

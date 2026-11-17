@@ -26,7 +26,9 @@ describe("Actual desktop event chain and settings", () => {
   let initialConfig;
   let coldStartReady = false;
   before(async () => {
-    await browser.setTimeout({ script: 2000 });
+    // 共享 CI 机器上的渲染尖峰会让 IPC 往返超过 2s；放宽到与 wdio 的
+    // waitforTimeout 一致，真正的卡死仍由 mocha 的用例超时兜底。
+    await browser.setTimeout({ script: 10000 });
     await selectWindow("pet");
     const environment = await browser.execute(() => ({
       systemReducedMotion: matchMedia("(prefers-reduced-motion: reduce)").matches,

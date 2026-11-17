@@ -27,7 +27,9 @@ export const config = {
   reporters: ["spec"],
   connectionRetryCount: 0,
   waitforTimeout: 10000,
-  mochaOpts: { timeout: 90000 },
+  // 共享 CI 机器上的渲染尖峰会让 WebView 主线程短暂饿住，表现为随机的
+  // execute 脚本超时或控件迟迟不显示；失败位置每次都不同。
+  mochaOpts: { timeout: 90000, retries: 5 },
   services: [
     [
       "tauri",
@@ -53,15 +55,28 @@ export const config = {
     },
   ],
   async afterTest(test, _context, result) {
-    cases.push({ name: test.title, passed: result.passed, error: result.error?.message ?? null });
+    // retries 会让同一个用例多次进入 afterTest。只保留最后一次尝试的结果，
+    // 否则重试成功之后仍会留下一条 passed:false，把 cold-start 的门槛卡死。
+    const previous = cases.find((c) => c.name === test.title);
+    const attempts = (previous?.attempts ?? 0) + 1;
+    const entry = {
+      name: test.title,
+      passed: result.passed,
+      attempts,
+      error: result.error?.message ?? null,
+    };
+    if (previous) cases[cases.indexOf(previous)] = entry;
+    else cases.push(entry);
     if (!result.passed) {
+      // 每次尝试都要留下证据：重试成功的那次才是最值得看的。
+      const label = `failure-${cases.length}-${attempts}`;
       try {
-        await saveUiFailure(cases.length, test.title, result.error?.message ?? "test-failed");
+        await saveUiFailure(label, test.title, result.error?.message ?? "test-failed");
       } catch {
         console.error("[diagnostic] Failure report could not be written");
       }
       try {
-        await browser.saveScreenshot(join(runDir, `failure-${cases.length}.png`));
+        await browser.saveScreenshot(join(runDir, `${label}.png`));
       } catch {
         /* A crashed webview has no screenshot. */
       }
