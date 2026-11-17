@@ -69,6 +69,16 @@ def fit_neutral(image, neutral):
     return size, (round(ref_center - center), top)
 
 
+def resample_rgba(image, y, x):
+    pixels = np.asarray(image.convert("RGBa"))
+    result = np.empty_like(pixels)
+    for channel in range(4):
+        result[:, :, channel] = ndimage.map_coordinates(
+            pixels[:, :, channel], (y, x), order=1, mode="constant"
+        )
+    return Image.frombytes("RGBa", image.size, result.tobytes()).convert("RGBA")
+
+
 def stabilize_shoe_contact(cell, floor, center):
     """Correct the shoe area when the generated pose briefly sinks into the floor."""
     current_floor = grounded_floor(cell, center)
@@ -78,18 +88,12 @@ def stabilize_shoe_contact(cell, floor, center):
     # Interpolate in premultiplied RGBA so the localized warp keeps soft edges.
     left, right = round(center) - 25, round(center) + 25
     top = floor - 24
-    strip = cell.crop((left, top, right, CELL[1])).convert("RGBa")
-    rgba = np.asarray(strip)
-    y, x = np.indices(rgba.shape[:2], dtype=np.float32)
-    horizontal = np.clip(np.minimum(x, rgba.shape[1] - 1 - x) / 10, 0, 1)
+    strip = cell.crop((left, top, right, CELL[1]))
+    y, x = np.indices((strip.height, strip.width), dtype=np.float32)
+    horizontal = np.clip(np.minimum(x, strip.width - 1 - x) / 10, 0, 1)
     vertical = np.clip(y / 15, 0, 1)
     displaced_y = y + (current_floor - floor) * horizontal * vertical
-    result = np.empty_like(rgba)
-    for channel in range(4):
-        result[:, :, channel] = ndimage.map_coordinates(
-            rgba[:, :, channel], (displaced_y, x), order=1, mode="constant"
-        )
-    cell.paste(Image.frombytes("RGBa", strip.size, result.tobytes()).convert("RGBA"), (left, top))
+    cell.paste(resample_rgba(strip, displaced_y, x), (left, top))
     return cell
 
 
@@ -177,25 +181,62 @@ def blend(a, b, weight):
     return Image.fromarray(np.dstack((rgb, alpha)).round().astype(np.uint8))
 
 
-def start_at(frames, pose, length=5):
+def align_standing_width(frames, neutral):
+    """Match the near-idle hair and hem silhouette while keeping the face and shoes planted."""
+    def width(image, top, bottom):
+        bounds = solid_bounds(image.crop((0, top, CELL[0], bottom)))
+        return bounds[2] - bounds[0]
+
+    window = 10
+    # Use several near-neutral frames to pick a constant correction for each edge.
+    hair, hem = (
+        np.clip(
+            width(neutral, top, bottom) / np.median(
+                [width(frame, top, bottom) for frame in frames[1:6]]
+            ) - 1,
+            0,
+            0.05,
+        )
+        for top, bottom in ((20, 70), (190, 201))
+    )
+    y, x = np.indices((CELL[1], CELL[0]), dtype=np.float32)
+    relative_x = x - (CELL[0] - 1) / 2
+    outer = np.clip((abs(relative_x) - 18) / 12, 0, 1)
+    width_adjustment = outer * (
+        hair * np.clip((94 - y) / 24, 0, 1) + hem * np.clip((y - 147) / 42, 0, 1)
+    )
+    mask = Image.fromarray(np.uint8(width_adjustment > 0) * 255)
+    corrected = list(frames)
+    for index in range(1, min(len(frames), window)):
+        t = np.clip((window - index) / (window - 4), 0, 1)
+        gain = width_adjustment * (t * t * (3 - 2 * t))
+        source_x = x - relative_x * gain / (1 + gain)
+        warped = resample_rgba(frames[index], y, source_x)
+        corrected[index] = Image.composite(warped, frames[index], mask)
+    return corrected
+
+
+def start_at(frames, pose, length=5, align_width=False):
+    if align_width:
+        frames = align_standing_width(frames, pose)
     return [pose, *(blend(pose, frames[i], i / length) for i in range(1, length)), *frames[length:]]
 
 
-def end_at(frames, pose, length=5):
-    return start_at(frames[::-1], pose, length)[::-1]
+def end_at(frames, pose, length=5, align_width=False):
+    return start_at(frames[::-1], pose, length, align_width)[::-1]
 
 
 def idle_loop(frames):
     return end_at(frames, frames[0], length=4)
 
 
-def sustained(frames, start, hold, end, neutral, exit_frames=None):
+def sustained(frames, start, hold, end, neutral, exit_frames=None, *, align_width=False):
     loop = idle_loop(frames[hold:end])
-    enter = start_at(frames[start:hold] + [loop[0]], neutral)
+    enter = start_at(frames[start:hold] + [loop[0]], neutral, align_width=align_width)
     if exit_frames is None:
         leave = enter[::-1]
     else:
-        leave = end_at([loop[0], *exit_frames], neutral)
+        leave = end_at([loop[0], *exit_frames], neutral, align_width=align_width)
     return enter, loop, leave
 
 
@@ -244,20 +285,25 @@ def main():
     thinking = read_frames("02-thinking/thinking-original.mp4", neutral=neutral)
     page = Atlas("codex-thinking.webp", clips)
     # Source indices are zero-based. The hand starts lowering after frame 148.
-    page.add_sustained("thinking", sustained(thinking, 14, 59, 149, neutral, thinking[149:185]))
+    page.add_sustained(
+        "thinking", sustained(thinking, 14, 59, 149, neutral, thinking[149:185], align_width=True)
+    )
     pages.append(page)
 
     working = read_frames("03-working/working-original.mp4", neutral=neutral)
     waiting = read_frames("04-waiting/waiting-original.mp4", neutral=neutral)
     page = Atlas("codex-work.webp", clips)
     page.add_sustained("working", sustained(working, 9, 42, 118, neutral))
-    page.add_sustained("waiting-permission", sustained(waiting, 8, 45, 115, neutral))
+    page.add_sustained(
+        "waiting-permission", sustained(waiting, 8, 45, 115, neutral, align_width=True)
+    )
     pages.append(page)
 
     notification = read_frames("05-notification/notification-original.mp4", neutral=neutral)
     done = read_frames("06-done/done-original.mp4", neutral=neutral)
     page = Atlas("codex-reactions.webp", clips)
-    page.add("notification", end_at(start_at(notification[5:101], neutral), neutral), fps=25)
+    wave = start_at(notification[5:101], neutral, align_width=True)
+    page.add("notification", end_at(wave, neutral, align_width=True), fps=25)
     page.add("notification-still", [notification[36]], fps=1)
     # Keep the open-mouth smile after the nod, then finish in the shared neutral pose.
     page.add("done", end_at(start_at(done[14:105], neutral), neutral), fps=32)
@@ -267,8 +313,8 @@ def main():
     error = read_frames("07-error/error-original.mp4", neutral=neutral)
     sleeping = read_frames("08-sleeping/sleeping-original.mp4", neutral=neutral)
     page = Atlas("codex-rest.webp", clips)
-    page.add_sustained("error", sustained(error, 11, 57, 113, neutral), exit_fps=60)
-    page.add_sustained("sleeping", sustained(sleeping, 10, 45, 116, neutral))
+    page.add_sustained("error", sustained(error, 11, 57, 113, neutral, align_width=True), exit_fps=60)
+    page.add_sustained("sleeping", sustained(sleeping, 10, 45, 116, neutral, align_width=True))
     pages.append(page)
 
     change = {}
