@@ -145,6 +145,9 @@ describe("Actual desktop event chain and settings", () => {
       await input[4].setValue("小蓝");
       await (await panel.$("button=保存")).click();
       await browser.waitUntil(async () => (await panel.getText()).includes("已保存"));
+      // WebView startup and atlas loading use real time. Keep the model bubble's
+      // lifetime under test control while those operations complete.
+      await nativeInvoke("e2e_set_clock_paused", { paused: true });
       for (const renderer of ["pixi", "dom"]) {
         const session = `codex-banter-${renderer}`;
         await selectWindow("settings");
@@ -158,13 +161,42 @@ describe("Actual desktop event chain and settings", () => {
         const bubble = await browser.$('.bubble[data-kind="banter"]');
         await bubble.waitForDisplayed();
         assert.equal(await bubble.getText(), "登录测试过啦。");
+        const before = await nativeInvoke("get_banter_projection");
+        const { capturedAtMs: now } = await nativeInvoke("get_pipeline_diagnostics");
+        assert.equal(
+          before.expiresAtMs - now,
+          8000,
+          "Unexpected summary lifetime before recreation",
+        );
         await selectWindow("settings");
         await nativeInvoke("e2e_recreate_pet");
         await pet({ state: "thinking", renderer }, { prepare: false });
-        await (await browser.$('.bubble[data-kind="banter"]')).waitForDisplayed();
-        peer.requestApproval(session);
-        await pet({ state: "waiting-permission", pending: 1 });
-        assert.equal(await (await browser.$(".bubble")).getAttribute("data-kind"), "status");
+        const restored = await nativeInvoke("get_banter_projection");
+        const { capturedAtMs: after } = await nativeInvoke("get_pipeline_diagnostics");
+        console.log(
+          `[banter-recreate] ${JSON.stringify({ renderer, before: before.revision, after: restored.revision, remainingMs: (restored.expiresAtMs ?? after) - after })}`,
+        );
+        assert.equal(after, now, "The test clock advanced during window recreation");
+        assert.deepEqual(restored, before, "Window recreation changed the active summary");
+        const restoredBubble = await browser.$('.bubble[data-kind="banter"]');
+        await restoredBubble.waitForDisplayed();
+        assert.equal(await restoredBubble.getText(), "登录测试过啦。");
+        if (renderer === "pixi") {
+          peer.requestApproval(session);
+          await pet({ state: "waiting-permission", pending: 1 });
+          assert.equal(await (await browser.$(".bubble")).getAttribute("data-kind"), "status");
+        } else {
+          await nativeInvoke("e2e_advance_clock", { ms: 7999 });
+          assert.equal((await nativeInvoke("get_banter_projection")).revision, restored.revision);
+          await nativeInvoke("e2e_advance_clock", { ms: 1 });
+          const expired = await nativeInvoke("get_banter_projection");
+          assert.equal(expired.text, null, "Summary survived its expiry");
+          await selectWindow("settings");
+          await nativeInvoke("e2e_recreate_pet");
+          await pet({ state: "thinking", renderer }, { prepare: false });
+          assert.deepEqual(await nativeInvoke("get_banter_projection"), expired);
+          assert.equal(await (await browser.$(".bubble")).getAttribute("data-kind"), "");
+        }
       }
       assert.equal(requests.length, 2);
       assert(
@@ -182,6 +214,7 @@ describe("Actual desktop event chain and settings", () => {
     } finally {
       await peer?.close();
       await selectWindow("settings");
+      await nativeInvoke("e2e_set_clock_paused", { paused: false });
       const { config } = await nativeInvoke("get_banter_status");
       await nativeInvoke("save_banter", { config, key: null, deleteKey: true });
       mock.closeAllConnections();

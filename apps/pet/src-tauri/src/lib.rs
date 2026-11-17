@@ -382,6 +382,11 @@ async fn e2e_advance_clock(s: State<'_, Arc<Native>>, ms: u64) -> Result<Project
 }
 #[cfg(feature = "e2e")]
 #[tauri::command]
+fn e2e_set_clock_paused(s: State<'_, Arc<Native>>, paused: bool) -> u64 {
+    s.set_clock_paused(paused)
+}
+#[cfg(feature = "e2e")]
+#[tauri::command]
 async fn e2e_recreate_pet(app: AppHandle) -> Result<(), String> {
     if let Some(w) = app.get_webview_window("pet") {
         w.destroy().map_err(|e| e.to_string())?;
@@ -600,6 +605,8 @@ pub fn run() {
             hook_status,
             #[cfg(feature = "e2e")]
             e2e_advance_clock,
+            #[cfg(feature = "e2e")]
+            e2e_set_clock_paused,
             #[cfg(feature = "e2e")]
             e2e_recreate_pet,
             #[cfg(feature = "e2e")]

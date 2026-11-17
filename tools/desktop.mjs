@@ -45,7 +45,7 @@ try {
     for (const file of readdirSync(join(root, "apps/pet/dist/assets"))) {
       if (
         file.endsWith(".js") &&
-        /wdioTauri|WDIO Tauri Plugin|e2e_advance_clock|e2e_banter_fixture/.test(
+        /wdioTauri|WDIO Tauri Plugin|e2e_advance_clock|e2e_set_clock_paused|e2e_banter_fixture/.test(
           readFileSync(join(root, "apps/pet/dist/assets", file), "utf8"),
         )
       )

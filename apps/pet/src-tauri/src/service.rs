@@ -87,19 +87,53 @@ enum Message {
 struct Clock {
     start: Instant,
     #[cfg(feature = "e2e")]
-    offset: AtomicU64,
+    test: Mutex<TestClock>,
+}
+#[cfg(feature = "e2e")]
+#[derive(Default)]
+struct TestClock {
+    advanced_ms: u64,
+    paused_ms: u64,
+    paused_at_ms: Option<u64>,
+}
+#[cfg(feature = "e2e")]
+impl TestClock {
+    fn now(&self, elapsed_ms: u64) -> u64 {
+        self.paused_at_ms
+            .unwrap_or(elapsed_ms)
+            .saturating_sub(self.paused_ms)
+            .saturating_add(self.advanced_ms)
+    }
 }
 impl Clock {
     fn now(&self) -> u64 {
-        let elapsed = self.start.elapsed().as_millis() as u64;
         #[cfg(feature = "e2e")]
         {
-            elapsed.saturating_add(self.offset.load(Ordering::SeqCst))
+            let clock = self.test.lock().unwrap();
+            clock.now(self.start.elapsed().as_millis() as u64)
         }
         #[cfg(not(feature = "e2e"))]
         {
-            elapsed
+            self.start.elapsed().as_millis() as u64
         }
+    }
+
+    #[cfg(feature = "e2e")]
+    fn set_paused(&self, paused: bool) -> u64 {
+        let mut clock = self.test.lock().unwrap();
+        let elapsed = self.start.elapsed().as_millis() as u64;
+        if paused {
+            clock.paused_at_ms.get_or_insert(elapsed);
+        } else if let Some(started) = clock.paused_at_ms.take() {
+            clock.paused_ms += elapsed.saturating_sub(started);
+        }
+        clock.now(elapsed)
+    }
+
+    #[cfg(feature = "e2e")]
+    fn advance(&self, millis: u64) {
+        let mut clock = self.test.lock().unwrap();
+        clock.advanced_ms = clock.advanced_ms.saturating_add(millis);
     }
 }
 pub struct Native {
@@ -257,7 +291,7 @@ impl Native {
             clock: Clock {
                 start: Instant::now(),
                 #[cfg(feature = "e2e")]
-                offset: AtomicU64::new(0),
+                test: Mutex::new(TestClock::default()),
             },
             render_receipts: Mutex::new(super::render_receipts::RenderReceipts::default()),
             animation_preview: Mutex::new(super::animation_preview::PreviewController::new(
@@ -376,7 +410,7 @@ impl Native {
                         },
                         Some(Message::Get(reply))=>{engine.tick(state.clock.now());let _=reply.send(engine.snapshot());},
                         #[cfg(feature = "e2e")]
-                        Some(Message::AdvanceClock(ms,reply))=>{state.clock.offset.fetch_add(ms,Ordering::SeqCst);engine.tick(state.clock.now());let _=reply.send(engine.snapshot());},
+                        Some(Message::AdvanceClock(ms,reply))=>{state.clock.advance(ms);engine.tick(state.clock.now());let _=reply.send(engine.snapshot());},
                         Some(Message::Diagnostics(reply))=>{let _=reply.send(engine.diagnostics());},
                         Some(Message::Inspect(reply))=>{let _=reply.send((engine.snapshot(),engine.diagnostics(),engine.codex_approvals(),banter.outcome().to_owned()));},
                         Some(Message::Reset)=>{
@@ -648,6 +682,11 @@ impl Native {
     pub fn position(&self, p: Position) {
         let _ = self.tx.try_send(Message::Position(p));
     }
+    #[cfg(feature = "e2e")]
+    pub fn set_clock_paused(&self, paused: bool) -> u64 {
+        self.clock.set_paused(paused)
+    }
+
     #[cfg(feature = "e2e")]
     pub async fn advance_clock(&self, ms: u64) -> Result<Projection, String> {
         if ms > 3_600_000 {
