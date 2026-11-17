@@ -73,6 +73,8 @@ export class SpritePlayback {
         !reaction.looping;
       const finishing =
         oneShot &&
+        requested !== "waiting-permission" &&
+        requested !== "error" &&
         (this.phase === "enter" ||
           now - this.since < (reaction.frames * 1000) / reaction.fps ||
           !this.showed(this.state, reaction.frames - 1));

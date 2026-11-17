@@ -165,6 +165,23 @@ describe("sprite presentation sequence", () => {
     });
   });
 
+  it("starts the waiting gesture instead of finishing an old Codex wave", () => {
+    const player = new SpritePlayback();
+    const reactions = {
+      ...clips,
+      notification: { ...still, frames: 96, fps: 24, looping: false },
+      "waiting-permission": { ...still, frames: 70, fps: 24 },
+      "waiting-permission-enter": { ...still, frames: 38, fps: 24, looping: false },
+    };
+    player.sample(reactions, "notification", 0, true, true);
+    expect(player.sample(reactions, "notification", 500, true, true)?.key).toBe("notification");
+    expect(player.sample(reactions, "waiting-permission", 600, true, true)).toMatchObject({
+      key: "waiting-permission-enter",
+      index: 0,
+      ready: true,
+    });
+  });
+
   it("hands off the held pose before advancing the recorded exit", () => {
     const player = new SpritePlayback();
     player.sample(clips, "thinking", 0, true, true);

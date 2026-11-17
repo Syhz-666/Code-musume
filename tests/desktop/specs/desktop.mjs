@@ -887,6 +887,26 @@ describe("Actual desktop event chain and settings", () => {
       });
       await pet({ renderer, form: "default", atlas: "spritesheet.png" });
       const config = await nativeInvoke("get_config");
+      await browser.execute(() => {
+        window.costumeInterruption = [];
+        const samples = window.costumeInterruption;
+        window.addEventListener("code-musume:e2e-frame", (e) => {
+          if (e.detail.phase === "costume" && samples.length < 300) {
+            samples.push(e.detail);
+          }
+        });
+      });
+      await nativeInvoke("set_config", { config: { ...config, formLock: "codex" } });
+      await waitForChange("form-to-codex");
+      await nativeInvoke("set_config", { config });
+      await pet({ renderer, form: "default", atlas: "spritesheet.png" });
+      const interrupted = await browser.execute(() => window.costumeInterruption);
+      assert(interrupted.every((frame) => frame.segment === "form-to-codex"));
+      assert(
+        interrupted.some((frame, i) => i > 0 && frame.frame < interrupted[i - 1].frame),
+        `${renderer}: cancelled costume change should reverse from the painted frame`,
+      );
+      assert.equal(interrupted.at(-1)?.frame, 0);
       await nativeInvoke("set_config", { config: { ...config, formLock: "codex" } });
       await waitForChange("form-to-codex");
       await pet({ renderer, form: "codex", atlas: "codex-idle.png" });

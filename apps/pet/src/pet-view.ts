@@ -24,6 +24,7 @@ import { builtinAssetUrl, builtinManifest } from "./builtin-character";
 import { spriteFramePosition } from "./sprite-layout";
 import { SpritePlayback } from "./sprite-playback";
 import { SpriteTransition } from "./sprite-transition";
+import { CostumePlayback, WaitingPresentation } from "./waiting-presentation";
 import "./pet.css";
 import "virtual:desktop-test";
 
@@ -44,6 +45,12 @@ const defaults: Config = {
 let config = { ...defaults },
   current = preview;
 let animationPreview: AnimationPreview = { ...DEFAULT_ANIMATION_PREVIEW };
+const waitingPresentation = new WaitingPresentation();
+let visualTarget = {
+  characterId: current.characterId,
+  formId: current.formId,
+  state: current.state,
+};
 function manualPreviewActive() {
   return animationPreview.enabled && animationPreview.state !== null;
 }
@@ -52,8 +59,15 @@ function displayedState() {
 }
 function displayFPS() {
   if (!visible || reduced()) return 1;
-  if (formPending() || costumeChange || playbackMoving || transition.active) return 60;
   const state = displayedState();
+  if (
+    visualTarget.state !== state ||
+    loadedForm !== formKey(current) ||
+    costumeChange ||
+    playbackMoving ||
+    transition.active
+  )
+    return 60;
   if (state === "sleeping") {
     const clip = form?.clips.sleeping;
     return clip && clip.frames > 1 ? clip.fps : 1;
@@ -82,8 +96,7 @@ let costumeChange: {
   from: CharacterForm;
   key: string;
   clip: Clip;
-  started: number;
-  lastFrameShown: boolean;
+  playback: CostumePlayback;
 } | null = null;
 let characterLoad: Promise<void> | null = null;
 let wakeDOM = () => {};
@@ -228,29 +241,40 @@ function clearFrames() {
   frameKey = "";
   domFrame = "";
 }
-function formKey(p: Projection) {
+function formKey(p: Pick<Projection, "characterId" | "formId">) {
   return `${p.characterId}:${p.formId}`;
 }
 function formPending() {
-  return loadedForm !== formKey(current);
+  return loadedForm !== formKey(visualTarget);
 }
 function costumeClip() {
-  return loadedCharacter === current.characterId && form?.clips[`form-to-${current.formId}`];
+  return (
+    loadedCharacter === visualTarget.characterId && form?.clips[`form-to-${visualTarget.formId}`]
+  );
+}
+function refreshVisualTarget(now: number, immediate = false) {
+  const previous = visualTarget;
+  visualTarget = waitingPresentation.resolve(
+    { characterId: current.characterId, formId: current.formId, state: displayedState() },
+    now,
+    immediate || reduced() || manualPreviewActive(),
+  );
+  return formKey(previous) !== formKey(visualTarget);
 }
 function syncCharacter(immediate: boolean) {
-  const key = formKey(current);
+  const key = formKey(visualTarget);
   if (loadingForm === key || (!loadingForm && !formPending())) return;
   if (
     !immediate &&
     visible &&
     !reduced() &&
-    loadedCharacter === current.characterId &&
+    loadedCharacter === visualTarget.characterId &&
     (costumeChange || (characterReady && costumeClip()))
   )
     return;
-  characterLoad = loadCharacter(current);
+  characterLoad = loadCharacter(visualTarget);
 }
-async function loadCharacter(p: Projection, playCostume = false) {
+async function loadCharacter(p: Pick<Projection, "characterId" | "formId">, playCostume = false) {
   const previous = form;
   const canPlayChange = playCostume && characterReady && loadedCharacter === p.characterId;
   costumeChange = null;
@@ -340,8 +364,7 @@ async function loadCharacter(p: Projection, playCostume = false) {
       from: previous,
       key: changeKey,
       clip: changeClip,
-      started: performance.now(),
-      lastFrameShown: false,
+      playback: new CostumePlayback(performance.now(), changeClip.frames, changeClip.fps),
     };
   }
   const builtin = !form?.image || !atlases.has(`${p.characterId}:${form.image}`);
@@ -358,7 +381,11 @@ async function loadCharacter(p: Projection, playCostume = false) {
   submitReceipt();
 }
 function visualReady() {
-  return !formPending() && (!form?.image || (poseReady && !costumeChange && !transition.active));
+  return (
+    loadedForm === formKey(current) &&
+    visualTarget.state === displayedState() &&
+    (!form?.image || (poseReady && !costumeChange && !transition.active))
+  );
 }
 function submitReceipt() {
   if (
@@ -464,6 +491,7 @@ function apply(p: Projection, immediate = false) {
   if (hand) hand.tint = color();
   stageNode.style.setProperty("--pet-color", `#${color().toString(16).padStart(6, "0")}`);
   if (app) app.ticker.maxFPS = displayFPS();
+  refreshVisualTarget(performance.now(), immediate);
   syncCharacter(immediate);
   draw();
   app?.render();
@@ -480,8 +508,9 @@ function draw() {
   // Event-driven draws use the event's own time. A long sleeping-frame interval
   // must not be charged to the first frame of a newly requested animation.
   elapsed = performance.now();
+  if (refreshVisualTarget(elapsed)) syncCharacter(false);
   const animate = !reduced();
-  const state = displayedState();
+  const state = visualTarget.state;
   renderFrames++;
   const renderNow = performance.now();
   if (renderNow - renderSince >= 2000) {
@@ -514,13 +543,14 @@ function draw() {
   if (!form?.image || !characterReady) return;
   const action =
     animate && !manualPreviewActive() && elapsed < touchUntil && state === "idle" ? "touch" : state;
-  const changeTick = costumeChange
-    ? Math.floor(((elapsed - costumeChange.started) * costumeChange.clip.fps) / 1000)
-    : 0;
-  if (
-    costumeChange &&
-    (!animate || (costumeChange.lastFrameShown && changeTick >= costumeChange.clip.frames))
-  ) {
+  const returning = costumeChange?.from.id === visualTarget.formId;
+  const changeSample = costumeChange?.playback.sample(elapsed, returning);
+  if (costumeChange && (!animate || changeSample?.done)) {
+    if (returning) {
+      form = costumeChange.from;
+      loadedForm = formKey(visualTarget);
+      playback.reset();
+    }
     costumeChange = null;
     syncCharacter(!animate);
     if (!characterReady) return;
@@ -529,18 +559,25 @@ function draw() {
   const sequenced =
     loadedCharacter === "builtin" && (form.id === "codex" || Boolean(preparingCostume));
   const paintedForm = costumeChange?.from ?? form;
-  const sample = costumeChange
-    ? {
-        clip: costumeChange.clip,
-        index: Math.min(costumeChange.clip.frames - 1, changeTick),
-        key: costumeChange.key,
-        phase: "costume",
-        state,
-        token: costumeChange.key,
-        ready: false,
-        transitioning: true,
-      }
-    : playback.sample(form.clips, preparingCostume ? "idle" : action, elapsed, animate, sequenced);
+  const sample =
+    costumeChange && changeSample
+      ? {
+          clip: costumeChange.clip,
+          index: changeSample.index,
+          key: costumeChange.key,
+          phase: "costume",
+          state,
+          token: costumeChange.key,
+          ready: false,
+          transitioning: true,
+        }
+      : playback.sample(
+          form.clips,
+          preparingCostume ? "idle" : action,
+          elapsed,
+          animate,
+          sequenced,
+        );
   if (!sample) return;
   const { clip } = sample;
   const atNeutral = Boolean(
@@ -625,10 +662,10 @@ function draw() {
       sprite.height = (144 * paintedForm.cellHeight) / paintedForm.cellWidth;
     }
   }
-  if (costumeChange) costumeChange.lastFrameShown = index === clip.frames - 1;
+  if (costumeChange) costumeChange.playback.markPresented(index);
   else playback.markPresented({ token: sample.token, index });
   if (atNeutral && !transition.active && !switchScheduled) {
-    const target = formKey(current);
+    const target = formKey(visualTarget);
     switchScheduled = true;
     requestAnimationFrame(() => {
       switchScheduled = false;
@@ -637,11 +674,11 @@ function draw() {
         characterReady &&
         !loadingForm &&
         !reduced() &&
-        target === formKey(current) &&
+        target === formKey(visualTarget) &&
         formPending() &&
         costumeClip()
       ) {
-        characterLoad = loadCharacter(current, true);
+        characterLoad = loadCharacter(visualTarget, true);
       }
     });
   }
@@ -694,7 +731,7 @@ async function main() {
     updateBubble();
   }).catch(() => () => {});
   if (characterLoad) await characterLoad;
-  else await loadCharacter(current);
+  else await loadCharacter(visualTarget);
   apply(current);
   if (isTauri()) {
     await listen<boolean>("pet-visibility", async (e) => {
