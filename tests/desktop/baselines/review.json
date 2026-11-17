@@ -402,17 +402,17 @@
       }
     },
     "both-restore-codex": {
-      "sha256": "d76e98552b894b58b2d18131ee6b1a5ba221f56fbc759c1bf04527518851c86e",
+      "sha256": "f8a24e5b89d8db6fbe4d3d762dfd6970bc28c0aa6cd3784460778cfb684a56fa",
       "reviewer": "Codex",
       "reviewMode": "user-delegated-agent",
-      "authorization": "用户要求“审阅受影响截图后更新视觉基准”。已核对干活中角色的横向比例，审阅两种渲染器和 Codex 恢复工作截图。",
-      "reviewedAt": "2026-11-07T06:58:11.438Z",
-      "sourceRun": "ui-20261107-working-width-review",
+      "authorization": "用户同意处理本轮 CI。已对照旧基准与 GitHub Actions 43930912317 的实际图，确认 Codex 恢复工作时使用新紫色造型。",
+      "reviewedAt": "2026-11-17T04:40:25.107Z",
+      "sourceRun": "ui-2026-11-16T18-39-48-808Z",
       "environment": {
         "dpr": 1,
         "font": "\"Code Musume Test\", sans-serif",
         "height": 210,
-        "language": "zh-CN",
+        "language": "en-US",
         "scrollHeight": 210,
         "scrollbarWidth": 0,
         "systemReducedMotion": false,
