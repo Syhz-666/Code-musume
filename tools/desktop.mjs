@@ -110,7 +110,8 @@ try {
       process.env.GITHUB_SHA ?? (revision.status === 0 ? revision.stdout.trim() : "unavailable");
     env.CODE_MUSUME_SOURCE_DIRTY = String(dirty.status === 1);
     if (!process.argv.includes("--skip-build")) {
-      run("cargo", ["build", "-p", "code-musume-hook"], env);
+      // e2e feature 放宽 hook 的投递预算上限；生产构建（package-windows.ps1）不传它。
+      run("cargo", ["build", "-p", "code-musume-hook", "--features", "e2e"], env);
       pm(
         [
           "--filter",

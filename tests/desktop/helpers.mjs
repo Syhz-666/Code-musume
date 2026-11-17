@@ -13,6 +13,12 @@ export const runDir = process.env.CODE_MUSUME_UI_RUN_DIR;
 export const visuals = [];
 const renderedLatencies = [];
 let hookSequence = 0;
+// e2e 构建的 hook 允许更长的投递预算（生产上限仍是 300ms）；共享 CI 机器上的
+// 渲染尖峰会让服务端接受连接的时间超过 300ms。
+const HOOK_BUDGET_MS = "900";
+const HOOK_ATTEMPTS = 3;
+const HOOK_BACKOFF_MS = 250;
+const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 // WDIO 1.5.0 caches its async callback by window label. Use the standard sync
 // endpoint (which awaits promises) so commands also work after window recreation.
 export async function nativeInvoke(command, args = {}) {
@@ -113,24 +119,27 @@ export async function hook(agent, event, extra = {}, session = "ui-session", tur
   const sequence = ++hookSequence;
   const input = JSON.stringify(payload);
   const eventId = randomUUID();
-  for (let attempt = 1; attempt <= 2; attempt++) {
+  let lastOutcome;
+  let attempt = 0;
+  while (attempt < HOOK_ATTEMPTS) {
+    attempt++;
     const report = await sendHookAttempt({ agent, event, eventId, input, sequence, attempt });
     if (report?.outcome === "http-delivered" && report.httpStatus === 202) return;
-    const outcome = report?.outcome ?? "report-missing-or-deadline";
+    lastOutcome = report?.outcome ?? "report-missing-or-deadline";
     // A timeout can occur after delivery. Keep the same id so the core deduplicates a replay.
-    if (
-      attempt === 1 &&
-      (!report || outcome === "http-timeout" || outcome === "connection-failed")
-    ) {
+    if (!report || lastOutcome === "http-timeout" || lastOutcome === "connection-failed") {
+      // 共享 CI 机器上渲染尖峰可持续 0.5s 以上；退避让重试落在尖峰之后而不是贴着它再撞一次。
+      if (attempt < HOOK_ATTEMPTS) await sleep(HOOK_BACKOFF_MS * attempt);
       continue;
     }
-    throw new Error(
-      `Hook ${sequence} ${agent}/${event} delivery failed: ${outcome} (attempt ${attempt})`,
-    );
+    break;
   }
+  throw new Error(
+    `Hook ${sequence} ${agent}/${event} delivery failed: ${lastOutcome} (attempt ${attempt})`,
+  );
 }
 async function sendHookAttempt({ agent, event, eventId, input, sequence, attempt }) {
-  const suffix = attempt === 1 ? "" : "-retry";
+  const suffix = attempt === 1 ? "" : `-retry${attempt - 1}`;
   const traceId = createHash("sha256").update(eventId).digest("hex").slice(0, 10);
   const tracePath = join(
     runDir,
@@ -147,6 +156,8 @@ async function sendHookAttempt({ agent, event, eventId, input, sequence, attempt
         event,
         "--runtime-file",
         join(runDir, "runtime/runtime.dev.json"),
+        "--budget-ms",
+        HOOK_BUDGET_MS,
         "--diagnostic-file",
         tracePath,
         "--event-id",

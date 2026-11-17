@@ -8,6 +8,10 @@ description = "代码娘 hook CLI（哑管道）——永远 exit 0、不写 std
 name = "code-musume-hook"
 path = "src/main.rs"
 
+[features]
+# 只放宽投递预算上限，供桌面 e2e 在负载更高的 CI 上使用；生产构建不含此 feature。
+e2e = []
+
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }

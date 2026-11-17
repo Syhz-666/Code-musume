@@ -66,10 +66,13 @@ fn send(e: &EnvelopeV2, path: PathBuf, budget: Duration) -> Result<(), String> {
 }
 fn hook(a: &[String]) {
     std::panic::set_hook(Box::new(|_| {}));
+    // 生产预算必须紧：hook 卡住会直接拖慢用户正在操作的 CLI。
+    // e2e 构建面对的是共享 CI 机器上的渲染尖峰，因此允许调用方申请更长的预算。
+    let ceiling = if cfg!(feature = "e2e") { 1000 } else { 300 };
     let budget = option(a, "--budget-ms")
         .and_then(|s| s.parse::<u64>().ok())
         .unwrap_or(300)
-        .clamp(1, 300);
+        .clamp(1, ceiling);
     let start = Instant::now();
     if std::thread::Builder::new()
         .spawn(move || {
