@@ -138,6 +138,12 @@ describe("Actual desktop event chain and settings", () => {
     });
     await new Promise((resolve) => mock.listen(0, "127.0.0.1", resolve));
     let peer;
+    const waitForRenderer = async (renderer) => {
+      // Switching renderers reloads the pet WebView. Send hooks only after
+      // the target renderer has submitted the latest idle projection.
+      const { revision } = await nativeInvoke("get_projection");
+      await pet({ state: "idle", renderer, revision, visualReady: true }, { prepare: false });
+    };
     try {
       peer = await startCodexPeer();
       await tab("使用偏好");
@@ -162,6 +168,7 @@ describe("Actual desktop event chain and settings", () => {
         await nativeInvoke("reset_sessions");
         await nativeInvoke("set_config", { config: { ...initialConfig, renderer } });
         await nativeInvoke("e2e_advance_clock", { ms: 30_001 });
+        await waitForRenderer(renderer);
         await hook(cx, "UserPromptSubmit", {}, session, "id118");
         await pet({ state: "thinking", renderer });
         await browser.waitUntil(() => peer.following(session));
@@ -224,6 +231,7 @@ describe("Actual desktop event chain and settings", () => {
         await selectWindow("settings");
         await nativeInvoke("reset_sessions");
         await nativeInvoke("set_config", { config: { ...initialConfig, renderer } });
+        await waitForRenderer(renderer);
         await hook(cx, "UserPromptSubmit", {}, session, "final-turn");
         await pet({ state: "thinking", renderer });
         await browser.waitUntil(() => peer.following(session));
