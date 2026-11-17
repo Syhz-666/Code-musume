@@ -51,6 +51,51 @@ export async function startCodexPeer() {
   }
   return {
     following: (session) => followed.has(session) && !followed.get(session).destroyed,
+    beginFinalOnly(session) {
+      send(followed.get(session), {
+        ...fixture[0],
+        params: {
+          ...fixture[0].params,
+          conversationId: session,
+          change: {
+            type: "snapshot",
+            revision: 1,
+            conversationState: {
+              requests: [],
+              turns: [{ turnId: "final-turn", status: "inProgress", items: [] }],
+            },
+          },
+        },
+      });
+    },
+    finishFinalOnly(session) {
+      send(followed.get(session), {
+        ...fixture[0],
+        params: {
+          ...fixture[0].params,
+          conversationId: session,
+          change: {
+            type: "patches",
+            baseRevision: 1,
+            revision: 2,
+            patches: [
+              { op: "replace", path: ["turns", 0, "status"], value: "completed" },
+              {
+                op: "add",
+                path: ["turns", 0, "items", 0],
+                value: {
+                  type: "agentMessage",
+                  id: "final-message",
+                  phase: "final_answer",
+                  completedAtMs: 2,
+                  text: "登录测试通过，保存设置还没验证。",
+                },
+              },
+            ],
+          },
+        },
+      });
+    },
     replay(session) {
       for (const frame of fixture) {
         send(followed.get(session), {

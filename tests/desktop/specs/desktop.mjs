@@ -110,16 +110,24 @@ describe("Actual desktop event chain and settings", () => {
       await pet({ state: "idle" });
     });
   }
-  it("configures banter and displays only the active work summary in both renderers", async () => {
+  it("configures banter and displays progress and completion summaries in both renderers", async function () {
+    this.timeout(150_000);
     const requests = [];
     const mock = createServer(async (req, res) => {
       const chunks = [];
       for await (const chunk of req) chunks.push(chunk);
-      requests.push(JSON.parse(Buffer.concat(chunks).toString()));
+      const request = JSON.parse(Buffer.concat(chunks).toString());
+      requests.push(request);
+      const final = JSON.parse(request.messages.at(-1).content).本轮最终回复;
       res.setHeader("content-type", "application/json");
       res.end(
         JSON.stringify({
-          choices: [{ finish_reason: "stop", message: { content: "登录测试过啦。" } }],
+          choices: [
+            {
+              finish_reason: "stop",
+              message: { content: final ? "登录过啦，保存还待查。" : "登录测试过啦。" },
+            },
+          ],
           usage: {
             prompt_tokens: 64,
             completion_tokens: 7,
@@ -211,6 +219,65 @@ describe("Actual desktop event chain and settings", () => {
       assert.equal(report.banterOutcome, "总结成功");
       assert(!JSON.stringify(report).includes("redacted progress text"));
       assert(!JSON.stringify(report).includes("synthetic-key"));
+      for (const [index, renderer] of ["pixi", "dom"].entries()) {
+        const session = `complete-${renderer}`;
+        await selectWindow("settings");
+        await nativeInvoke("reset_sessions");
+        await nativeInvoke("set_config", { config: { ...initialConfig, renderer } });
+        await hook(cx, "UserPromptSubmit", {}, session, "final-turn");
+        await pet({ state: "thinking", renderer });
+        await browser.waitUntil(() => peer.following(session));
+        peer.beginFinalOnly(session);
+        await browser.waitUntil(async () =>
+          Object.values(
+            (await nativeInvoke("get_pipeline_diagnostics")).codexApprovalSync.sessions,
+          ).some((session) => session.status === "observed"),
+        );
+        if (renderer === "pixi") {
+          peer.finishFinalOnly(session);
+          await browser.waitUntil(
+            async () =>
+              (await nativeInvoke("get_pipeline_diagnostics")).codexApprovalSync.metrics
+                .visibleMessages === 3,
+          );
+        }
+        await hook(cx, "Stop", {}, session, "final-turn");
+        await pet({ state: "done", renderer });
+        assert.equal(await (await browser.$('.bubble[data-kind="status"]')).getText(), "这轮好了");
+        if (renderer === "dom") peer.finishFinalOnly(session);
+        await browser.waitUntil(
+          async () =>
+            (await nativeInvoke("get_pipeline_diagnostics")).banterCompletion.phase === "ready",
+        );
+        assert.equal((await nativeInvoke("get_banter_projection")).text, null);
+        await nativeInvoke("e2e_advance_clock", { ms: 3000 });
+        await pet({ state: "idle", renderer });
+        const complete = await browser.$('.bubble[data-kind="banter"]');
+        await complete.waitForDisplayed();
+        assert.equal(await complete.getText(), "登录过啦，保存还待查。");
+        assert.equal((await nativeInvoke("get_banter_projection")).kind, "completion");
+        assert.equal(requests.length, 3 + index);
+        assert.deepEqual(JSON.parse(requests.at(-1).messages.at(-1).content), {
+          本轮最终回复: "登录测试通过，保存设置还没验证。",
+        });
+        if (renderer === "pixi") {
+          await selectWindow("settings");
+          await nativeInvoke("e2e_recreate_pet");
+          await pet({ state: "idle", renderer }, { prepare: false });
+          assert.equal(
+            await (await browser.$('.bubble[data-kind="banter"]')).getText(),
+            "登录过啦，保存还待查。",
+          );
+          await nativeInvoke("e2e_advance_clock", { ms: 8000 });
+          await browser.waitUntil(
+            async () => !(await browser.$('.bubble[data-kind="banter"]').isExisting()),
+          );
+        } else {
+          await hook(cc, "UserPromptSubmit", {}, "next-work", "next-turn");
+          await pet({ state: "thinking", agent: cc });
+          assert.equal((await nativeInvoke("get_banter_projection")).kind, null);
+        }
+      }
     } finally {
       await peer?.close();
       await selectWindow("settings");
