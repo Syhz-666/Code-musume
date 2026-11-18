@@ -259,25 +259,28 @@ impl Banter {
         self.segments.retain(|key, _| keep(key));
         self.finals.retain(|key, _| keep(key));
     }
-    pub fn ingest(&mut self, p: VisibleProgress, now: u64) {
-        if !self.enabled || p.kind == BanterKind::Idle || p.text.trim().is_empty() {
-            return;
+    pub fn ingest(&mut self, p: VisibleProgress, now: u64) -> &'static str {
+        if !self.enabled || p.kind == BanterKind::Idle {
+            return "disabled-or-invalid-kind";
+        }
+        if p.text.trim().is_empty() {
+            return "empty";
         }
         if p.text.chars().count() > MAX_PROGRESS {
             self.skipped_long = self.skipped_long.saturating_add(1);
-            return;
+            return "too-long";
         }
         let key = (p.agent, p.session);
         if p.kind == BanterKind::Completion {
             self.finals.insert(key, (p.turn, p.text));
-            return;
+            return "accepted";
         }
         if !self.segments.contains_key(&key) && self.segments.len() >= MAX_SESSIONS {
-            return;
+            return "session-capacity";
         }
         let segment = self.segments.entry(key.clone()).or_default();
         if segment.seen.contains(&p.id) {
-            return;
+            return "duplicate";
         }
         if segment.seen.len() == 512 {
             segment.seen.pop_front();
@@ -322,6 +325,7 @@ impl Banter {
             }
             self.clear_progress();
         }
+        "accepted"
     }
     pub fn discard_final(&mut self, agent: Agent, session: &str) {
         self.finals.remove(&(agent, session.into()));
@@ -367,6 +371,16 @@ impl Banter {
                 && c.target.2 == turn
                 && !c.requested
                 && now <= c.ended_at + FINAL_WINDOW
+        })
+    }
+
+    pub fn completion_waiting_for_request(&self) -> bool {
+        self.completion.as_ref().is_some_and(|c| {
+            !c.requested
+                && self
+                    .finals
+                    .get(&(c.target.0, c.target.1.clone()))
+                    .is_some_and(|(turn, _)| *turn == c.target.2)
         })
     }
 
@@ -565,13 +579,24 @@ impl Banter {
             _ => None,
         }
     }
-    pub fn finish(&mut self, id: u64, text: Option<String>, now: u64) -> bool {
+    pub fn request_context(&self) -> Option<(u64, &'static str, Option<&Target>)> {
+        let request = self.in_flight.as_ref()?;
+        let kind = match request.kind {
+            RequestKind::Progress => "progress",
+            RequestKind::Completion => "completion",
+            RequestKind::Quiet(_) => "quiet",
+            RequestKind::Idle => "idle",
+        };
+        Some((request.id, kind, request.target.as_ref()))
+    }
+
+    pub fn finish(&mut self, id: u64, text: Option<String>, now: u64) -> Option<&'static str> {
         if self.in_flight.as_ref().is_none_or(|f| f.id != id) {
-            return false;
+            return None;
         }
         let flight = self.in_flight.take().unwrap();
         if flight.kind == RequestKind::Idle {
-            match text.and_then(clean_summary) {
+            let stage = match text.and_then(clean_summary) {
                 Some(text) if !self.idle.recent.contains(&text) => {
                     if self.idle.recent.len() == 3 {
                         self.idle.recent.pop_front();
@@ -579,17 +604,25 @@ impl Banter {
                     self.idle.recent.push_back(text.clone());
                     self.idle.diagnostics.shown += 1;
                     self.show(None, text, now, BanterKind::Idle);
+                    "published"
                 }
-                Some(_) => self.idle.diagnostics.last_skip = Some("duplicate"),
-                None => self.idle.diagnostics.last_skip = Some("no-line"),
+                Some(_) => "duplicate",
+                None => "no-valid-line",
+            };
+            if stage != "published" {
+                self.idle.diagnostics.last_skip = Some(if stage == "duplicate" {
+                    "duplicate"
+                } else {
+                    "no-line"
+                });
             }
-            return true;
+            return Some(stage);
         }
         if flight.kind == RequestKind::Completion {
             let summary = text.and_then(clean_summary);
             if summary.is_none() {
                 self.cancel_completion("no-summary");
-                return true;
+                return Some("no-valid-line");
             }
             if let Some(c) = self
                 .completion
@@ -598,38 +631,45 @@ impl Banter {
             {
                 c.result = summary;
                 self.completion_phase = "ready";
+                return Some("ready");
             }
-            return true;
+            return Some("deadline");
         }
         let target = flight.target.unwrap();
         if matches!(flight.kind, RequestKind::Quiet(_)) {
-            if flight.eligible {
-                if let Some(text) = text.and_then(clean_summary) {
-                    if self.last_quiet_line.as_ref() != Some(&text) {
-                        self.last_quiet_line = Some(text.clone());
-                        self.show(Some(&target), text, now, BanterKind::Progress);
-                    }
-                } else {
-                    self.show_quiet_fallback(&target, now);
-                }
+            if !flight.eligible {
+                return Some("work-changed");
             }
-            return true;
+            let Some(text) = text.and_then(clean_summary) else {
+                self.show_quiet_fallback(&target, now);
+                return Some("fallback");
+            };
+            if self.last_quiet_line.as_ref() == Some(&text) {
+                return Some("duplicate");
+            }
+            self.last_quiet_line = Some(text.clone());
+            self.show(Some(&target), text, now, BanterKind::Progress);
+            return Some("published");
         }
         let Some(segment) = self.segments.get_mut(&(target.0, target.1.clone())) else {
-            return true;
+            return Some("session-lost");
         };
-        if flight.eligible && flight.version == segment.version {
-            if let Some(text) = text.and_then(clean_summary) {
-                if segment.last_summary.as_ref() != Some(&text) {
-                    segment.last_summary = Some(text.clone());
-                    segment.entries.push(Entry::Summary(text.clone()));
-                    if self.target.as_ref() == Some(&target) {
-                        self.show(Some(&target), text, now, BanterKind::Progress);
-                    }
-                }
-            }
+        if !flight.eligible || self.target.as_ref() != Some(&target) {
+            return Some("work-changed");
         }
-        true
+        if flight.version != segment.version {
+            return Some("newer-progress");
+        }
+        let Some(text) = text.and_then(clean_summary) else {
+            return Some("no-valid-line");
+        };
+        if segment.last_summary.as_ref() == Some(&text) {
+            return Some("duplicate");
+        }
+        segment.last_summary = Some(text.clone());
+        segment.entries.push(Entry::Summary(text.clone()));
+        self.show(Some(&target), text, now, BanterKind::Progress);
+        Some("published")
     }
     fn show_quiet_fallback(&mut self, target: &Target, now: u64) {
         self.show(
@@ -732,7 +772,10 @@ mod tests {
         assert!(b.tick_idle(30_000, Dispatch::Unavailable, || 6).is_none());
         let first = b.tick_idle(60_000, Dispatch::Ready, || 6).unwrap();
         assert!(matches!(&first.entries[..], [Entry::Idle { recent }] if recent.is_empty()));
-        assert!(b.finish(first.id, Some("发梢又翘啦。".into()), 60_001));
+        assert_eq!(
+            b.finish(first.id, Some("发梢又翘啦。".into()), 60_001),
+            Some("published")
+        );
         let shown = b.snapshot();
         assert_eq!(shown.kind, Some(BanterKind::Idle));
         assert_eq!(shown.agent, None);
@@ -744,17 +787,22 @@ mod tests {
         assert!(
             matches!(&duplicate.entries[..], [Entry::Idle { recent }] if recent == &["发梢又翘啦。"])
         );
-        assert!(b.finish(duplicate.id, Some("发梢又翘啦。".into()), 90_001));
+        assert_eq!(
+            b.finish(duplicate.id, Some("发梢又翘啦。".into()), 90_001),
+            Some("duplicate")
+        );
         assert!(b.snapshot().text.is_none());
         let late = b.tick_idle(120_000, Dispatch::Ready, || 6).unwrap();
         assert!(b.update_idle(IdleGate::Blocked, 120_001));
-        assert!(!b.finish(late.id, Some("这句已经过时。".into()), 120_002));
+        assert!(b
+            .finish(late.id, Some("这句已经过时。".into()), 120_002)
+            .is_none());
         b.update_idle(IdleGate::Ready, 121_000);
         let finishing = b.tick_idle(151_000, Dispatch::Ready, || 6).unwrap();
         assert!(matches!(&finishing.entries[..], [Entry::Idle { recent }] if recent.len() == 1));
         b.completed(target(Agent::Codex, "earlier").unwrap(), 151_001);
         assert!(b.update_idle(IdleGate::Ready, 151_001));
-        assert!(!b.finish(finishing.id, None, 151_002));
+        assert!(b.finish(finishing.id, None, 151_002).is_none());
         assert!(b
             .tick_idle(181_001, Dispatch::Ready, || panic!("completion owns idle"))
             .is_none());
@@ -784,7 +832,7 @@ mod tests {
             .unwrap();
         final_text(&mut b, "one", 10);
         assert!(b.completed(t, 100));
-        assert!(!b.finish(work.id, Some("还在检查。".into()), 110));
+        assert!(b.finish(work.id, Some("还在检查。".into()), 110).is_none());
         let complete = b
             .tick_completion(CompletionGate::Waiting, 120, true)
             .0
@@ -796,7 +844,10 @@ mod tests {
             .tick_completion(CompletionGate::Waiting, 125, true)
             .0
             .is_none());
-        assert!(b.finish(complete.id, Some("登录过啦，保存还待查。".into()), 130));
+        assert_eq!(
+            b.finish(complete.id, Some("登录过啦，保存还待查。".into()), 130),
+            Some("ready")
+        );
         b.tick_completion(CompletionGate::Idle, 3099, true);
         assert!(b.snapshot().text.is_none());
         b.tick_completion(CompletionGate::Idle, 3100, true);
@@ -830,7 +881,9 @@ mod tests {
             .0
             .unwrap();
         assert!(b.tick_completion(CompletionGate::Blocked, 6200, true).1);
-        assert!(!b.finish(request.id, Some("晚到的结果。".into()), 6300));
+        assert!(b
+            .finish(request.id, Some("晚到的结果。".into()), 6300)
+            .is_none());
 
         b.completed(t.clone(), 7000);
         final_text(&mut b, "one", 7000);
@@ -852,7 +905,9 @@ mod tests {
             .0
             .unwrap();
         assert!(b.tick_completion(CompletionGate::Idle, 31000, true).1);
-        assert!(!b.finish(request.id, Some("已经迟到了。".into()), 31001));
+        assert!(b
+            .finish(request.id, Some("已经迟到了。".into()), 31001)
+            .is_none());
         assert!(b.snapshot().text.is_none());
     }
 
@@ -910,7 +965,9 @@ mod tests {
         let third = b.tick(claude, 60_000, Dispatch::Ready).unwrap();
         assert!(matches!(&third.entries[..], [Entry::Progress(t)] if t == "running tests"));
         b.reset(false);
-        assert!(!b.finish(third.id, Some("这条不应出现。".into()), 60_100));
+        assert!(b
+            .finish(third.id, Some("这条不应出现。".into()), 60_100)
+            .is_none());
     }
 
     #[test]
@@ -952,7 +1009,10 @@ mod tests {
             }]
         ));
         assert!(b.tick(work.clone(), 120_001, Dispatch::Ready).is_none());
-        assert!(b.finish(request.id, Some("我陪你等消息呀。".into()), 120_010));
+        assert_eq!(
+            b.finish(request.id, Some("我陪你等消息呀。".into()), 120_010),
+            Some("published")
+        );
         assert_eq!(b.snapshot().text.as_deref(), Some("我陪你等消息呀。"));
         assert_eq!(b.snapshot().expires_at_ms, Some(128_010));
         b.tick(work.clone(), 128_010, Dispatch::Observe);

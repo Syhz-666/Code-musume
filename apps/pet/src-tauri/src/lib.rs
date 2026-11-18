@@ -1,6 +1,7 @@
 mod animation_preview;
 mod banter_api;
 mod banter_credentials;
+mod banter_diagnostics;
 mod banter_service;
 mod characters;
 mod claude_progress;
@@ -187,6 +188,20 @@ async fn unsubscribe_banter(
 #[tauri::command]
 async fn get_banter_projection(s: State<'_, Arc<Native>>) -> Result<BanterProjection, String> {
     s.banter_projection().await
+}
+#[tauri::command]
+fn report_banter_rendered(
+    window: WebviewWindow,
+    s: State<'_, Arc<Native>>,
+    instance_id: String,
+    revision: u64,
+) {
+    if window.label() == "pet"
+        && s.runtime.instance_id == instance_id
+        && !s.animation_preview.lock().unwrap().active()
+    {
+        s.banter_rendered(instance_id, revision);
+    }
 }
 #[tauri::command]
 async fn get_banter_status(s: State<'_, Arc<Native>>) -> Result<BanterStatus, String> {
@@ -583,6 +598,7 @@ pub fn run() {
             subscribe_banter,
             unsubscribe_banter,
             get_banter_projection,
+            report_banter_rendered,
             get_banter_status,
             #[cfg(feature = "e2e")]
             e2e_banter_fixture,

@@ -179,6 +179,12 @@ describe("Actual desktop event chain and settings", () => {
         await bubble.waitForDisplayed();
         assert.equal(await bubble.getText(), "登录测试过啦。");
         const before = await nativeInvoke("get_banter_projection");
+        await browser.waitUntil(async () => {
+          const { banterPipeline } = await nativeInvoke("get_pipeline_diagnostics");
+          return banterPipeline.trace.entries.some(
+            (entry) => entry.revision === before.revision && entry.reason === "frame-submitted",
+          );
+        });
         const { capturedAtMs: now } = await nativeInvoke("get_pipeline_diagnostics");
         assert.equal(
           before.expiresAtMs - now,
@@ -224,10 +230,27 @@ describe("Actual desktop event chain and settings", () => {
       const report = await nativeInvoke("get_pipeline_diagnostics");
       assert.equal(report.codexApprovalSync.metrics.lastReceivedVersion, 13);
       assert.equal(report.codexApprovalSync.metrics.visibleMessages, 2);
+      assert.equal(report.codexApprovalSync.messageCapture.progressMessages, 2);
       assert(report.codexApprovalSync.metrics.lastVisibleAtUnixMs > 0);
       assert.equal(report.banterOutcome, "总结成功");
+      const progressTrace = report.banterPipeline.trace.entries.filter(
+        (entry) => entry.kind === "progress",
+      );
+      const lastBubble = progressTrace.findLast((entry) => entry.reason === "frame-submitted");
+      assert(lastBubble);
+      assert(
+        progressTrace.some(
+          (entry) => entry.step === "request" && entry.requestId === lastBubble.requestId,
+        ),
+      );
+      assert(
+        progressTrace.some(
+          (entry) => entry.step === "result" && entry.requestId === lastBubble.requestId,
+        ),
+      );
       assert(!JSON.stringify(report).includes("redacted progress text"));
       assert(!JSON.stringify(report).includes("synthetic-key"));
+      assert(!JSON.stringify(report).includes("登录测试过啦。"));
       for (const [index, renderer] of ["pixi", "dom"].entries()) {
         const session = `complete-${renderer}`;
         await selectWindow("settings");
@@ -265,7 +288,15 @@ describe("Actual desktop event chain and settings", () => {
         const complete = await browser.$('.bubble[data-kind="banter"]');
         await complete.waitForDisplayed();
         assert.equal(await complete.getText(), "登录过啦，保存还待查。");
-        assert.equal((await nativeInvoke("get_banter_projection")).kind, "completion");
+        const completionBubble = await nativeInvoke("get_banter_projection");
+        assert.equal(completionBubble.kind, "completion");
+        await browser.waitUntil(async () => {
+          const { banterPipeline } = await nativeInvoke("get_pipeline_diagnostics");
+          return banterPipeline.trace.entries.some(
+            (entry) =>
+              entry.revision === completionBubble.revision && entry.reason === "frame-submitted",
+          );
+        });
         assert.equal(requests.length, 3 + index);
         assert.deepEqual(JSON.parse(requests.at(-1).messages.at(-1).content), {
           本轮最终回复: "登录测试通过，保存设置还没验证。",
@@ -288,6 +319,20 @@ describe("Actual desktop event chain and settings", () => {
           assert.equal((await nativeInvoke("get_banter_projection")).kind, null);
         }
       }
+      await nativeInvoke("reset_sessions");
+      await hook(cx, "UserPromptSubmit", {}, "missing-final", "no-text");
+      await pet({ state: "thinking" });
+      await hook(cx, "Stop", {}, "missing-final", "no-text");
+      await pet({ state: "done" });
+      await nativeInvoke("e2e_advance_clock", { ms: 2_001 });
+      await browser.waitUntil(async () => {
+        const { banterPipeline } = await nativeInvoke("get_pipeline_diagnostics");
+        return banterPipeline.trace.entries.some(
+          (entry) =>
+            entry.kind === "completion" && entry.step === "turn" && entry.reason === "no-final",
+        );
+      });
+      assert.equal(requests.length, 4);
     } finally {
       await peer?.close();
       await selectWindow("settings");

@@ -434,6 +434,7 @@ function submitReceipt() {
 }
 const hostNode = host;
 let banter: BanterProjection | undefined;
+let submittedBanter: BanterProjection | undefined;
 function updateBubble() {
   const p = current;
   const summary =
@@ -454,6 +455,21 @@ function updateBubble() {
   bubbleNode.textContent = text;
   bubbleNode.dataset.kind = status ? "status" : summary ? "banter" : "";
   bubbleNode.classList.toggle("shown", Boolean(text));
+  const shown = banter;
+  if (!shown || status || !summary || !visible || !isTauri() || shown === submittedBanter) return;
+  submittedBanter = shown;
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      if (banter !== shown || !visible || bubbleNode.dataset.kind !== "banter") {
+        if (submittedBanter === shown) submittedBanter = undefined;
+        return;
+      }
+      void invoke("report_banter_rendered", {
+        instanceId: shown.instanceId,
+        revision: shown.revision,
+      }).catch(() => {});
+    });
+  });
 }
 function apply(p: Projection, immediate = false) {
   current = p;

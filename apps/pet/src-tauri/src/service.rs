@@ -34,6 +34,7 @@ type Inspection = (
     String,
     serde_json::Value,
     serde_json::Value,
+    serde_json::Value,
 );
 
 enum Message {
@@ -54,6 +55,7 @@ enum Message {
     ),
     BanterUnsubscribe(String),
     BanterGet(oneshot::Sender<BanterProjection>),
+    BanterRendered(String, u64),
     BanterStatus(oneshot::Sender<BanterStatus>),
     BanterSave(
         BanterConfig,
@@ -170,21 +172,28 @@ impl Native {
             .send(Message::Inspect(tx))
             .await
             .map_err(|_| "核心已停止")?;
-        let (projection, diagnostics, approvals, banter_outcome, completion, idle) =
+        let (projection, diagnostics, approvals, banter_outcome, completion, idle, banter) =
             rx.await.map_err(|_| "核心已停止")?;
         let pipeline = self.pipeline.lock().unwrap().snapshot();
         let preview = self.animation_preview.lock().unwrap().snapshot();
         let receipt = self.render_receipts.lock().unwrap().latest.clone();
         #[cfg(windows)]
-        let (rejected, metrics) = {
+        let (rejected, metrics, transport, message_capture) = {
             let sync = self.approval_diagnostics.borrow();
             (
                 serde_json::json!(sync.rejected),
                 serde_json::json!(sync.metrics),
+                serde_json::json!(sync.transport),
+                serde_json::json!(sync.message_capture),
             )
         };
         #[cfg(not(windows))]
-        let (rejected, metrics) = (serde_json::Value::Null, serde_json::Value::Null);
+        let (rejected, metrics, transport, message_capture) = (
+            serde_json::Value::Null,
+            serde_json::Value::Null,
+            serde_json::Value::Null,
+            serde_json::Value::Null,
+        );
         Ok(serde_json::json!({
             "v": 2, "appVersion": self.runtime.app_version,
             "instanceId": self.runtime.instance_id, "capturedAtMs": self.clock.now(),
@@ -193,10 +202,11 @@ impl Native {
                 "limitEntries": MAX_QUEUE_ENTRIES, "limitBytes": MAX_QUEUE_BYTES, "unprocessedLoss": self.lost.load(Ordering::SeqCst)},
             "projection": projection, "coreDiagnostics": diagnostics,
             "pipeline": pipeline, "preview": preview, "renderReceipt": receipt,
-            "codexApprovalSync": {"enabled": self.codex_approval_sync, "sessions": approvals, "rejected": rejected, "metrics": metrics},
+            "codexApprovalSync": {"enabled": self.codex_approval_sync, "sessions": approvals, "rejected": rejected, "metrics": metrics, "transport": transport, "messageCapture": message_capture},
             "banterOutcome": banter_outcome,
             "banterCompletion": completion,
             "banterIdle": idle,
+            "banterPipeline": banter,
         }))
     }
     pub fn start(app: Option<AppHandle>, mode: &str) -> Result<Arc<Self>, String> {
@@ -392,9 +402,10 @@ impl Native {
                         },
                         Some(Message::BanterUnsubscribe(id)) => { banter_subscribers.remove(&id); },
                         Some(Message::BanterGet(reply)) => { let _ = reply.send(banter.core.snapshot()); },
+                        Some(Message::BanterRendered(instance, revision)) => { banter.rendered(&instance, revision, now); },
                         Some(Message::BanterStatus(reply)) => { let _ = reply.send(banter.status()); },
                         Some(Message::BanterSave(config, key, delete, reply)) => {
-                            let _ = reply.send(banter.save(config, key, delete));
+                            let _ = reply.send(banter.save(config, key, delete, now));
                         },
                         Some(Message::BanterProbe(config, key, preview, reply)) => {
                             if probe_active {
@@ -428,10 +439,10 @@ impl Native {
                         #[cfg(feature = "e2e")]
                         Some(Message::AdvanceClock(ms,reply))=>{state.clock.advance(ms);engine.tick(state.clock.now());let _=reply.send(engine.snapshot());},
                         Some(Message::Diagnostics(reply))=>{let _=reply.send(engine.diagnostics());},
-                        Some(Message::Inspect(reply))=>{let _=reply.send((engine.snapshot(),engine.diagnostics(),engine.codex_approvals(),banter.outcome().to_owned(),banter.completion_diagnostics(),serde_json::json!(banter.core.idle_diagnostics())));},
+                        Some(Message::Inspect(reply))=>{let _=reply.send((engine.snapshot(),engine.diagnostics(),engine.codex_approvals(),banter.outcome().to_owned(),banter.completion_diagnostics(),serde_json::json!(banter.core.idle_diagnostics()),banter.diagnostics(now)));},
                         Some(Message::Reset)=>{
                             engine.reset(now);
-                            banter.clear();
+                            banter.clear(now);
                             if codex_approval_sync { codex_sessions.send_replace(Vec::new()); }
                         },
                         Some(Message::Position(p))=>{engine.config.position=Some(p);*state.config.lock().unwrap()=engine.config.clone();position_dirty=true;last_position=Instant::now();},
@@ -629,6 +640,11 @@ impl Native {
     }
     pub async fn banter_projection(&self) -> Result<BanterProjection, String> {
         self.banter_call(Message::BanterGet).await
+    }
+    pub fn banter_rendered(&self, instance_id: String, revision: u64) {
+        let _ = self
+            .tx
+            .try_send(Message::BanterRendered(instance_id, revision));
     }
     pub async fn banter_status(&self) -> Result<BanterStatus, String> {
         self.banter_call(Message::BanterStatus).await

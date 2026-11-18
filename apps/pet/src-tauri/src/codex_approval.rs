@@ -300,6 +300,55 @@ pub struct Rejections {
 pub struct SyncDiagnostics {
     pub rejected: Rejections,
     pub metrics: CodexSyncMetrics,
+    pub transport: TransportDiagnostics,
+    pub message_capture: CaptureDiagnostics,
+}
+
+#[derive(Clone, Default, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TransportDiagnostics {
+    connect_attempts: u64,
+    handshakes: u64,
+    last_handshake_at_unix_ms: Option<u64>,
+    last_open_failure: Option<TransportFailure>,
+    last_disconnect: Option<TransportFailure>,
+}
+
+#[derive(Clone, Default, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CaptureDiagnostics {
+    baselines: u64,
+    patches_without_baseline: u64,
+    progress_messages: u64,
+    final_messages: u64,
+    dropped_messages: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TransportFailure {
+    stage: &'static str,
+    error_kind: Option<String>,
+    os_code: Option<i32>,
+    at_unix_ms: Option<u64>,
+}
+
+impl TransportFailure {
+    fn new(stage: &'static str, error: Option<io::Error>) -> Self {
+        Self {
+            stage,
+            error_kind: error.as_ref().map(|error| format!("{:?}", error.kind())),
+            os_code: error.and_then(|error| error.raw_os_error()),
+            at_unix_ms: unix_ms(),
+        }
+    }
+}
+
+fn unix_ms() -> Option<u64> {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .map(|age| age.as_millis() as u64)
 }
 
 impl Default for SyncDiagnostics {
@@ -310,6 +359,8 @@ impl Default for SyncDiagnostics {
                 supported_versions: SUPPORTED_SYNC_VERSIONS.to_vec(),
                 ..Default::default()
             },
+            transport: TransportDiagnostics::default(),
+            message_capture: CaptureDiagnostics::default(),
         }
     }
 }
@@ -433,6 +484,8 @@ impl Observer {
                 .collect();
             if !updates.is_empty() {
                 self.diagnostics.metrics.last_failure = Some(CodexSyncFailure::Disconnected);
+                self.diagnostics.transport.last_disconnect =
+                    Some(TransportFailure::new("owner-disconnected", None));
             }
             return updates;
         }
@@ -488,6 +541,7 @@ impl Observer {
                     if revision == stream.revision && self.capture && stream.progress.is_none() {
                         stream.progress =
                             Some(progress_baseline(change, id, &mut stream.progress_turns));
+                        self.diagnostics.message_capture.baselines += 1;
                     }
                     return Vec::new();
                 }
@@ -501,6 +555,9 @@ impl Observer {
                 let progress = self
                     .capture
                     .then(|| progress_baseline(change, id, &mut progress_turns));
+                if progress.is_some() {
+                    self.diagnostics.message_capture.baselines += 1;
+                }
                 *current = Some(Stream {
                     owner: owner.into(),
                     version,
@@ -513,6 +570,9 @@ impl Observer {
             }
             Some("patches") => {
                 let Some(stream) = current.as_mut() else {
+                    if self.capture {
+                        self.diagnostics.message_capture.patches_without_baseline += 1;
+                    }
                     return vec![];
                 };
                 if version != stream.version {
@@ -559,6 +619,8 @@ impl Observer {
                         self.diagnostics.metrics.last_failure =
                             Some(CodexSyncFailure::InvalidFrame);
                     }
+                } else if self.capture {
+                    self.diagnostics.message_capture.patches_without_baseline += 1;
                 }
             }
             _ => {
@@ -668,7 +730,7 @@ async fn connected(
     diagnostics: &watch::Sender<SyncDiagnostics>,
     capture: &mut watch::Receiver<Option<u64>>,
     progress: Option<&mpsc::Sender<(u64, VisibleProgress)>>,
-) -> io::Result<()> {
+) -> Result<(), TransportFailure> {
     let init = uuid::Uuid::new_v4().to_string();
     send(
         &mut pipe,
@@ -677,7 +739,8 @@ async fn connected(
             "version":1,"params":{"clientType":"code-musume-observer"}
         }),
     )
-    .await?;
+    .await
+    .map_err(|e| TransportFailure::new("initialize-write", Some(e)))?;
     let mut frames = Frames::default();
     let mut observer = Observer {
         diagnostics: diagnostics.borrow().clone(),
@@ -693,17 +756,23 @@ async fn connected(
     loop {
         tokio::select! {
             read = pipe.read(&mut chunk) => {
-                let size = read?;
-                if size == 0 { return Ok(()) }
+                let size = read.map_err(|e| TransportFailure::new("pipe-read", Some(e)))?;
+                if size == 0 { return Err(TransportFailure::new("pipe-eof", None)); }
                 frames.0.extend_from_slice(&chunk[..size]);
-                while let Some(msg) = frames.next()? {
-                    if client.is_none() && msg["requestId"] == init && msg["type"] == "response"
-                        && msg["resultType"] == "success" {
-                        if let Some(id) = msg["result"]["clientId"].as_str() {
-                            client = Some(id.to_owned());
-                            let ids = wanted.borrow_and_update().clone();
-                            sync(&mut pipe, id, &mut observer, &ids).await?;
+                while let Some(msg) = frames.next().map_err(|e| TransportFailure::new("wire-frame", Some(e)))? {
+                    if client.is_none() && msg["requestId"] == init && msg["type"] == "response" {
+                        if msg["resultType"] != "success" {
+                            return Err(TransportFailure::new("handshake-rejected", None));
                         }
+                        let id = msg["result"]["clientId"].as_str()
+                            .ok_or_else(|| TransportFailure::new("handshake-missing-client", None))?;
+                        client = Some(id.to_owned());
+                        observer.diagnostics.transport.handshakes += 1;
+                        observer.diagnostics.transport.last_handshake_at_unix_ms = unix_ms();
+                        diagnostics.send_replace(observer.diagnostics.clone());
+                        let ids = wanted.borrow_and_update().clone();
+                        sync(&mut pipe, id, &mut observer, &ids).await
+                            .map_err(|e| TransportFailure::new("follow-write", Some(e)))?;
                     } else if let Some(client) = &client {
                         let events = observer.frame(&msg);
                         for event in events {
@@ -711,14 +780,21 @@ async fn connected(
                                 Observation::Changed(update) => {
                                     if updates.send(update).await.is_err() { return Ok(()) }
                                 }
-                                Observation::Resync(id) => follow(&mut pipe, client, &id, true).await?,
+                                Observation::Resync(id) => follow(&mut pipe, client, &id, true).await
+                                    .map_err(|e| TransportFailure::new("follow-write", Some(e)))?,
                                 Observation::Progress(message) => {
                                     if let (Some(generation), Some(tx)) = (generation, progress) {
+                                        let kind = message.kind;
                                         if tx.try_send((generation, message)).is_ok() {
                                             observer.diagnostics.metrics.visible_messages += 1;
-                                            observer.diagnostics.metrics.last_visible_at_unix_ms =
-                                                SystemTime::now().duration_since(UNIX_EPOCH).ok()
-                                                    .map(|age| age.as_millis() as u64);
+                                            observer.diagnostics.metrics.last_visible_at_unix_ms = unix_ms();
+                                            if kind == BanterKind::Completion {
+                                                observer.diagnostics.message_capture.final_messages += 1;
+                                            } else {
+                                                observer.diagnostics.message_capture.progress_messages += 1;
+                                            }
+                                        } else {
+                                            observer.diagnostics.message_capture.dropped_messages += 1;
                                         }
                                     }
                                 }
@@ -742,7 +818,8 @@ async fn connected(
                     if observer.capture {
                         let ids = wanted.borrow().clone();
                         for id in ids {
-                            follow(&mut pipe, client, &id, true).await?;
+                            follow(&mut pipe, client, &id, true).await
+                                .map_err(|e| TransportFailure::new("follow-write", Some(e)))?;
                         }
                     }
                 }
@@ -750,14 +827,16 @@ async fn connected(
             changed = wanted.changed() => {
                 if changed.is_err() { return Ok(()) }
                 let ids = wanted.borrow_and_update().clone();
-                if let Some(client) = &client { sync(&mut pipe, client, &mut observer, &ids).await?; }
+                if let Some(client) = &client { sync(&mut pipe, client, &mut observer, &ids).await
+                    .map_err(|e| TransportFailure::new("follow-write", Some(e)))?; }
             },
             _ = retry.tick() => {
                 if let Some(client) = &client {
                     let ids = wanted.borrow_and_update().clone();
-                    sync(&mut pipe, client, &mut observer, &ids).await?;
+                    sync(&mut pipe, client, &mut observer, &ids).await
+                        .map_err(|e| TransportFailure::new("follow-write", Some(e)))?;
                 } else if start.elapsed() > Duration::from_secs(5) {
-                    return Err(io::Error::new(io::ErrorKind::TimedOut, "desktop handshake timed out"));
+                    return Err(TransportFailure::new("handshake-timeout", None));
                 }
             }
         }
@@ -778,8 +857,20 @@ pub async fn observe(
         }
         // Tokio's default named-pipe QoS is SECURITY_IDENTIFICATION. The server
         // can identify this client but cannot impersonate it.
-        if let Ok(pipe) = ClientOptions::new().open(path) {
-            let _ = connected(
+        let connection = ClientOptions::new().open(path);
+        diagnostics.send_modify(|status| {
+            status.transport.connect_attempts += 1;
+            if let Err(error) = &connection {
+                status.transport.last_open_failure = Some(TransportFailure {
+                    stage: "pipe-open",
+                    error_kind: Some(format!("{:?}", error.kind())),
+                    os_code: error.raw_os_error(),
+                    at_unix_ms: unix_ms(),
+                });
+            }
+        });
+        if let Ok(pipe) = connection {
+            let result = connected(
                 pipe,
                 &mut wanted,
                 &updates,
@@ -788,8 +879,12 @@ pub async fn observe(
                 progress.as_ref(),
             )
             .await;
+            let Err(failure) = result else {
+                return;
+            };
             diagnostics.send_modify(|status| {
                 status.metrics.last_failure = Some(CodexSyncFailure::Disconnected);
+                status.transport.last_disconnect = Some(failure);
             });
             let ids = wanted.borrow().clone();
             for id in ids {

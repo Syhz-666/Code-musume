@@ -263,6 +263,16 @@ fn requires_a_fresh_local_snapshot_after_a_gap_or_owner_loss() {
         })),
         None,
     );
+    assert_eq!(
+        observer
+            .diagnostics
+            .transport
+            .last_disconnect
+            .as_ref()
+            .unwrap()
+            .stage,
+        "owner-disconnected"
+    );
 }
 
 #[test]
@@ -478,6 +488,11 @@ fn check_pipe_approval_lifecycle(version: u32) {
             assert_eq!(engine.snapshot().state, DisplayState::Thinking);
             assert_eq!(engine.snapshot().pending_count, 0);
             assert_eq!(latest.borrow().metrics.last_failure, Some(CodexSyncFailure::Disconnected));
+            {
+                let diagnostics = latest.borrow();
+                assert_eq!(diagnostics.transport.handshakes, 1);
+                assert!(matches!(diagnostics.transport.last_disconnect.as_ref().unwrap().stage, "pipe-eof" | "pipe-read"));
+            }
 
             // A reconnect starts a new baseline even when its revision is lower.
             capture.send_replace(Some(1));
