@@ -9,6 +9,12 @@ use std::{
     process::{Command, Stdio},
     time::{Duration, Instant},
 };
+
+const RELAY_TEST_TIMEOUT: Duration = Duration::from_secs(8);
+#[cfg(windows)]
+// This test also waits for a cold Windows PowerShell process to start.
+const POWERSHELL_TEST_TIMEOUT: Duration = Duration::from_secs(30);
+
 struct Sandbox {
     path: PathBuf,
 }
@@ -35,7 +41,7 @@ impl Drop for Sandbox {
         }
     }
 }
-fn server(path: &Path) -> std::thread::JoinHandle<EnvelopeV2> {
+fn server(path: &Path, timeout: Duration) -> std::thread::JoinHandle<EnvelopeV2> {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     listener.set_nonblocking(true).unwrap();
     fs::write(
@@ -53,12 +59,16 @@ fn server(path: &Path) -> std::thread::JoinHandle<EnvelopeV2> {
     )
     .unwrap();
     std::thread::spawn(move || {
-        let end = Instant::now() + Duration::from_secs(8);
+        let end = Instant::now() + timeout;
         let mut conn = loop {
             match listener.accept() {
                 Ok((c, _)) => break c,
-                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock && Instant::now() < end => {
-                    std::thread::sleep(Duration::from_millis(10))
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    assert!(
+                        Instant::now() < end,
+                        "No relay connection within {timeout:?}"
+                    );
+                    std::thread::sleep(Duration::from_millis(10));
                 }
                 Err(e) => panic!("No relay connection: {e}"),
             }
@@ -96,7 +106,7 @@ fn server(path: &Path) -> std::thread::JoinHandle<EnvelopeV2> {
         serde_json::from_slice(&bytes[header..header + len]).unwrap()
     })
 }
-fn run(mut cmd: Command, input: &str) -> std::process::Output {
+fn run(mut cmd: Command, input: &str, timeout: Duration) -> std::process::Output {
     cmd.stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -105,6 +115,7 @@ fn run(mut cmd: Command, input: &str) -> std::process::Output {
         use std::os::windows::process::CommandExt;
         cmd.creation_flags(0x08000000);
     }
+    let program = cmd.get_program().to_string_lossy().into_owned();
     let mut child = cmd.spawn().unwrap();
     child
         .stdin
@@ -112,14 +123,16 @@ fn run(mut cmd: Command, input: &str) -> std::process::Output {
         .unwrap()
         .write_all(input.as_bytes())
         .unwrap();
-    let end = Instant::now() + Duration::from_secs(8);
+    let end = Instant::now() + timeout;
     loop {
         if child.try_wait().unwrap().is_some() {
             break;
         }
         if Instant::now() > end {
-            let _ = child.kill();
-            panic!("Relay process hung");
+            if child.kill().is_ok() {
+                let _ = child.wait();
+            }
+            panic!("{program} did not exit within {timeout:?} after receiving the test payload");
         }
         std::thread::sleep(Duration::from_millis(10));
     }
@@ -128,7 +141,7 @@ fn run(mut cmd: Command, input: &str) -> std::process::Output {
 #[test]
 fn native_hook_transmits_exact_payload_and_silent_success() {
     let t = Sandbox::new();
-    let handle = server(&t.path);
+    let handle = server(&t.path, RELAY_TEST_TIMEOUT);
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_code-musume-hook"));
     cmd.args([
         "--agent",
@@ -140,7 +153,7 @@ fn native_hook_transmits_exact_payload_and_silent_success() {
     ])
     .env("CODE_MUSUME_DATA_DIR", &t.path);
     let input = "{\n \"session_id\":\"s\",\"tool_input\":{\"command\":\"中文 路径\"}\n}";
-    let out = run(cmd, input);
+    let out = run(cmd, input, RELAY_TEST_TIMEOUT);
     assert!(out.status.success());
     assert!(out.stdout.is_empty() && out.stderr.is_empty());
     assert_eq!(handle.join().unwrap().payload, input);
@@ -148,7 +161,7 @@ fn native_hook_transmits_exact_payload_and_silent_success() {
 #[test]
 fn opt_in_report_explains_bom_and_delivery_without_saving_input_or_token() {
     let t = Sandbox::new();
-    let handle = server(&t.path);
+    let handle = server(&t.path, RELAY_TEST_TIMEOUT);
     let report = t.path.join("hook-diagnostic.json");
     let event_id = uuid::Uuid::new_v4().to_string();
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_code-musume-hook"));
@@ -166,7 +179,7 @@ fn opt_in_report_explains_bom_and_delivery_without_saving_input_or_token() {
     .env("CODE_MUSUME_DATA_DIR", &t.path);
     let input =
         "\u{feff}{\"session_id\":\"private-session\",\"prompt\":\"never-save-this-content\"}";
-    let out = run(cmd, input);
+    let out = run(cmd, input, RELAY_TEST_TIMEOUT);
     assert!(out.status.success() && out.stdout.is_empty() && out.stderr.is_empty());
     let envelope = handle.join().unwrap();
     assert_eq!(envelope.id, event_id);
@@ -202,7 +215,11 @@ fn opt_in_report_distinguishes_missing_runtime_from_http_rejection() {
     ])
     .arg(&report)
     .env("CODE_MUSUME_DATA_DIR", &t.path);
-    let out = run(cmd, r#"{"session_id":"private-session"}"#);
+    let out = run(
+        cmd,
+        r#"{"session_id":"private-session"}"#,
+        RELAY_TEST_TIMEOUT,
+    );
     assert!(out.status.success() && out.stdout.is_empty() && out.stderr.is_empty());
     let value: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
     assert_eq!(value["outcome"], "runtime-unavailable");
@@ -218,7 +235,7 @@ fn codex_encoded_windows_command_forwards_utf8_and_special_path() {
         .join("code-musume-hook.exe");
     fs::create_dir_all(exe.parent().unwrap()).unwrap();
     fs::copy(env!("CARGO_BIN_EXE_code-musume-hook"), &exe).unwrap();
-    let handle = server(&t.path);
+    let handle = server(&t.path, POWERSHELL_TEST_TIMEOUT);
     let handler = installer::handler(Agent::Codex, "PreToolUse", &exe, "dev");
     let command = handler["commandWindows"].as_str().unwrap();
     let encoded = command.split_whitespace().last().unwrap();
@@ -227,7 +244,7 @@ fn codex_encoded_windows_command_forwards_utf8_and_special_path() {
         .env("CODE_MUSUME_DATA_DIR", &t.path);
     let input =
         "{\"session_id\":\"s\",\"turn_id\":\"t\",\"tool_input\":{\"command\":\"中文 & % ! 路径\"}}";
-    let out = run(cmd, input);
+    let out = run(cmd, input, POWERSHELL_TEST_TIMEOUT);
     assert!(out.status.success(), "{:?}", out.status);
     assert!(
         out.stdout.is_empty() && out.stderr.is_empty(),
