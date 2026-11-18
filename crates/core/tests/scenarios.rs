@@ -37,6 +37,51 @@ fn engine() -> Engine {
     Engine::new("test".into(), Config::default())
 }
 #[test]
+fn idle_banter_preserves_work_and_lost_signal_and_overrides_confirmed_sleep() {
+    let mut e = engine();
+    assert!(e.idle_banter_available());
+    e.set_idle_resting(Some(true), 0);
+    assert_eq!(e.snapshot().state, DisplayState::Sleeping);
+    for (agent, id) in [(Agent::Codex, "codex"), (Agent::ClaudeCode, "claude")] {
+        e.ingest(event(agent, "UserPromptSubmit", id, "t", json!({}), id), 1);
+        assert!(!e.idle_banter_available());
+        assert_eq!(e.snapshot().state, DisplayState::Thinking);
+    }
+    e.ingest(
+        event(
+            Agent::ClaudeCode,
+            "PermissionRequest",
+            "claude",
+            "t",
+            json!({"tool_use_id":"test", "tool_name":"Bash"}),
+            "permission",
+        ),
+        2,
+    );
+    assert_eq!(e.snapshot().state, DisplayState::WaitingPermission);
+    assert!(!e.idle_banter_available());
+    e.ingest(
+        event(
+            Agent::ClaudeCode,
+            "SessionEnd",
+            "claude",
+            "t",
+            json!({}),
+            "end",
+        ),
+        3,
+    );
+    e.tick(300_002);
+    assert_eq!(e.snapshot().bubble_key.as_deref(), Some("uncertain"));
+    assert!(!e.idle_banter_available());
+    e.reset(300_003);
+    e.set_idle_resting(Some(false), 300_003);
+    e.tick(900_004);
+    assert_eq!(e.snapshot().state, DisplayState::Idle);
+    e.set_idle_resting(None, 900_004);
+    assert_eq!(e.snapshot().state, DisplayState::Sleeping);
+}
+#[test]
 fn main_stop_is_attributed_once_and_other_work_takes_precedence() {
     use code_musume_core::banter::{CompletionGate, Target};
     let mut e = engine();

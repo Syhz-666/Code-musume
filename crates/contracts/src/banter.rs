@@ -15,11 +15,18 @@ pub enum BanterProtocol {
 #[cfg_attr(feature = "bindings", derive(ts_rs::TS))]
 pub struct BanterConfig {
     pub enabled: bool,
+    pub idle_enabled: bool,
     pub protocol: BanterProtocol,
     pub base_url: String,
     pub model: String,
     pub nickname: String,
     pub prompt_cache: bool,
+}
+
+impl BanterConfig {
+    pub fn active(&self) -> bool {
+        self.enabled || self.idle_enabled
+    }
 }
 
 #[derive(Deserialize)]
@@ -41,6 +48,7 @@ pub enum BanterKind {
     #[default]
     Progress,
     Completion,
+    Idle,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -81,4 +89,16 @@ pub struct BanterStatus {
     pub outcome: String,
     pub skipped_long: u32,
     pub usage: Option<BanterUsage>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn older_banter_config_defaults_to_work_only() {
+        let config: BanterConfig = serde_json::from_str(r#"{"enabled":true}"#).unwrap();
+        assert!(config.enabled);
+        assert!(!config.idle_enabled);
+    }
 }

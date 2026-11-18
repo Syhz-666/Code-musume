@@ -33,6 +33,7 @@ type Inspection = (
     BTreeMap<String, CodexApprovalStatus>,
     String,
     serde_json::Value,
+    serde_json::Value,
 );
 
 enum Message {
@@ -68,6 +69,8 @@ enum Message {
     ),
     #[cfg(feature = "e2e")]
     BanterFixture(VisibleProgress, oneshot::Sender<()>),
+    #[cfg(feature = "e2e")]
+    IdleDice(Vec<u8>, oneshot::Sender<Result<(), String>>),
     Config(
         Config,
         CharacterManifest,
@@ -167,7 +170,7 @@ impl Native {
             .send(Message::Inspect(tx))
             .await
             .map_err(|_| "核心已停止")?;
-        let (projection, diagnostics, approvals, banter_outcome, completion) =
+        let (projection, diagnostics, approvals, banter_outcome, completion, idle) =
             rx.await.map_err(|_| "核心已停止")?;
         let pipeline = self.pipeline.lock().unwrap().snapshot();
         let preview = self.animation_preview.lock().unwrap().snapshot();
@@ -193,6 +196,7 @@ impl Native {
             "codexApprovalSync": {"enabled": self.codex_approval_sync, "sessions": approvals, "rejected": rejected, "metrics": metrics},
             "banterOutcome": banter_outcome,
             "banterCompletion": completion,
+            "banterIdle": idle,
         }))
     }
     pub fn start(app: Option<AppHandle>, mode: &str) -> Result<Arc<Self>, String> {
@@ -330,6 +334,7 @@ impl Native {
             let (probe_done, mut probe_finished) = mpsc::channel(1);
             let mut last_broadcast = 0;
             let mut timer = tokio::time::interval(Duration::from_millis(250));
+            timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             let mut position_dirty = false;
             let mut last_position = Instant::now();
             let mut fullscreen = false;
@@ -338,6 +343,7 @@ impl Native {
                 let now = state.clock.now();
                 let mut received = None;
                 let mut dispatch_banter = false;
+                let mut outcome = None;
                 tokio::select! {
                     msg=rx.recv()=>match msg{
                         Some(Message::Event(e,size,at))=>{
@@ -414,11 +420,15 @@ impl Native {
                             banter.progress(banter.generation, &engine, p, state.clock.now());
                             let _ = reply.send(());
                         },
+                        #[cfg(feature = "e2e")]
+                        Some(Message::IdleDice(faces, reply)) => {
+                            let _ = reply.send(banter.set_idle_dice(faces));
+                        },
                         Some(Message::Get(reply))=>{engine.tick(state.clock.now());let _=reply.send(engine.snapshot());},
                         #[cfg(feature = "e2e")]
                         Some(Message::AdvanceClock(ms,reply))=>{state.clock.advance(ms);engine.tick(state.clock.now());let _=reply.send(engine.snapshot());},
                         Some(Message::Diagnostics(reply))=>{let _=reply.send(engine.diagnostics());},
-                        Some(Message::Inspect(reply))=>{let _=reply.send((engine.snapshot(),engine.diagnostics(),engine.codex_approvals(),banter.outcome().to_owned(),banter.completion_diagnostics()));},
+                        Some(Message::Inspect(reply))=>{let _=reply.send((engine.snapshot(),engine.diagnostics(),engine.codex_approvals(),banter.outcome().to_owned(),banter.completion_diagnostics(),serde_json::json!(banter.core.idle_diagnostics())));},
                         Some(Message::Reset)=>{
                             engine.reset(now);
                             banter.clear();
@@ -469,7 +479,7 @@ impl Native {
                         banter.progress(generation, &engine, message, state.clock.now());
                     },
                     Some((id, result)) = outcome_rx.recv() => {
-                        banter.finish(id, result, state.clock.now(), engine.snapshot().certainty);
+                        outcome = Some((id, result));
                     },
                     Some(update) = probe_finished.recv() => {
                         probe_active = false;
@@ -499,8 +509,36 @@ impl Native {
                     .snapshot()
                     .state
                     .is_some();
-                let banter_view =
-                    banter.refresh(&engine, preview, state.clock.now(), dispatch_banter);
+                let now = state.clock.now();
+                if outcome.is_some() {
+                    engine.tick(now);
+                }
+                let hidden = engine.config.user_hidden || fullscreen;
+                // Window recreation can briefly remove the WebView. Keep the current
+                // projection during that gap, and wait for the new window to send requests.
+                let window_visible = !hidden
+                    && banter.core.idle_resting().is_some()
+                    && (dispatch_banter || outcome.is_some())
+                    && app
+                        .as_ref()
+                        .and_then(|app| app.get_webview_window("pet"))
+                        .is_some_and(|window| window.is_visible().unwrap_or(false));
+                banter.reconcile_idle(&engine, preview || hidden, now);
+                if let Some((id, result)) = outcome {
+                    banter.finish(id, result, now, engine.snapshot().certainty, window_visible);
+                }
+                let banter_view = banter.refresh(
+                    &engine,
+                    preview,
+                    now,
+                    dispatch_banter,
+                    window_visible.then_some(!probe_active),
+                );
+                let idle_resting = banter
+                    .core
+                    .idle_resting()
+                    .filter(|_| engine.idle_banter_available());
+                engine.set_idle_resting(idle_resting, now);
                 if banter_view.revision != last_banter {
                     last_banter = banter_view.revision;
                     banter_subscribers
@@ -599,6 +637,10 @@ impl Native {
     pub async fn banter_fixture(&self, progress: VisibleProgress) -> Result<(), String> {
         self.banter_call(|tx| Message::BanterFixture(progress, tx))
             .await
+    }
+    #[cfg(feature = "e2e")]
+    pub async fn set_idle_dice(&self, faces: Vec<u8>) -> Result<(), String> {
+        self.banter_call(|tx| Message::IdleDice(faces, tx)).await?
     }
     pub async fn banter_save(
         &self,

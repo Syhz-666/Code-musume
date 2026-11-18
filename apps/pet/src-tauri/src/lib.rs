@@ -200,6 +200,11 @@ async fn e2e_banter_fixture(
 ) -> Result<(), String> {
     s.banter_fixture(progress).await
 }
+#[cfg(feature = "e2e")]
+#[tauri::command]
+async fn e2e_idle_dice(s: State<'_, Arc<Native>>, faces: Vec<u8>) -> Result<(), String> {
+    s.set_idle_dice(faces).await
+}
 #[tauri::command]
 async fn save_banter(
     s: State<'_, Arc<Native>>,
@@ -581,6 +586,8 @@ pub fn run() {
             get_banter_status,
             #[cfg(feature = "e2e")]
             e2e_banter_fixture,
+            #[cfg(feature = "e2e")]
+            e2e_idle_dice,
             save_banter,
             probe_banter,
             unsubscribe_projection,

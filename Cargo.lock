@@ -2757,6 +2757,7 @@ dependencies = [
  "code-musume-contracts",
  "code-musume-core",
  "code-musume-hook",
+ "fastrand",
  "httpdate",
  "image",
  "json-patch",

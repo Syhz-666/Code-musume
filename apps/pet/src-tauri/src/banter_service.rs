@@ -9,7 +9,7 @@ use code_musume_contracts::{
 };
 use code_musume_core::{
     adapter::{normalize, Kind},
-    banter::{Banter, CompletionGate, Dispatch, Entry, QuietActivity, Target},
+    banter::{Banter, CompletionGate, Dispatch, Entry, IdleGate, QuietActivity, Target},
     Engine,
 };
 use code_musume_hook::runtime::{atomic_write, config_dir};
@@ -36,6 +36,8 @@ pub struct Service {
     has_key: bool,
     codex_ready: bool,
     claude_ready: bool,
+    #[cfg(feature = "e2e")]
+    dice: std::collections::VecDeque<u8>,
 }
 
 impl Service {
@@ -56,10 +58,12 @@ impl Service {
         let has_key =
             !config.base_url.is_empty() && credentials.read(&config).ok().flatten().is_some();
         let enabled = config.enabled && has_key;
+        let mut core = Banter::new(instance, enabled);
+        core.reset_idle(config.idle_enabled && has_key);
         capture.send_replace(enabled.then_some(1));
         Self {
             config,
-            core: Banter::new(instance, enabled),
+            core,
             generation: 1,
             capture,
             credentials,
@@ -75,6 +79,8 @@ impl Service {
             has_key,
             codex_ready: false,
             claude_ready: false,
+            #[cfg(feature = "e2e")]
+            dice: Default::default(),
         }
     }
     pub fn status(&self) -> BanterStatus {
@@ -106,9 +112,10 @@ impl Service {
         }
         if delete {
             config.enabled = false;
+            config.idle_enabled = false;
         }
         let previous =
-            if config.base_url.is_empty() || (!config.enabled && key.is_none() && !delete) {
+            if config.base_url.is_empty() || (!config.active() && key.is_none() && !delete) {
                 None
             } else {
                 self.credentials.read(&config)?
@@ -119,8 +126,8 @@ impl Service {
                 || config.protocol == self.config.protocol
                     && config.base_url == self.config.base_url
                     && self.has_key
-                    && !config.enabled);
-        if config.enabled && !has_key {
+                    && !config.active());
+        if config.active() && !has_key {
             return Err("请填写 API Key".into());
         }
         let changed_key = key.is_some() || delete;
@@ -138,11 +145,25 @@ impl Service {
             }
             return Err(error);
         }
-        let changed = self.config != config || changed_key;
+        let work_changed = self.config.enabled != config.enabled;
+        let idle_changed = self.config.idle_enabled != config.idle_enabled;
+        let shared_changed = changed_key
+            || BanterConfig {
+                enabled: config.enabled,
+                idle_enabled: config.idle_enabled,
+                ..self.config.clone()
+            } != config;
         self.config = config;
         self.has_key = has_key;
-        if changed {
-            self.clear();
+        if (shared_changed || idle_changed)
+            && self.core.reset_idle(self.config.idle_enabled && has_key)
+        {
+            self.abort_task();
+        }
+        if shared_changed || work_changed {
+            self.clear_work();
+        }
+        if shared_changed || work_changed {
             self.auth_failed = false;
             self.cooldown = 0;
             self.usage = None;
@@ -151,7 +172,18 @@ impl Service {
         Ok(self.status())
     }
     pub fn clear(&mut self) {
-        self.abort_task();
+        if self
+            .core
+            .reset_idle(self.config.idle_enabled && self.has_key)
+        {
+            self.abort_task();
+        }
+        self.clear_work();
+    }
+    fn clear_work(&mut self) {
+        if !self.core.has_idle_request() {
+            self.abort_task();
+        }
         self.generation += 1;
         let enabled = self.config.enabled && self.has_key;
         self.capture
@@ -171,7 +203,9 @@ impl Service {
         mut config: BanterConfig,
         key: Option<String>,
     ) -> Result<(reqwest::Client, BanterConfig, String, u64), String> {
-        config.enabled = true;
+        if !config.active() {
+            config.enabled = true;
+        }
         banter_api::validate(&mut config)?;
         let key = match key {
             Some(key) if !key.is_empty() => key,
@@ -189,6 +223,7 @@ impl Service {
     }
     pub fn test_ok(&mut self, generation: u64, mut config: BanterConfig, usage: BanterUsage) {
         config.enabled = self.config.enabled;
+        config.idle_enabled = self.config.idle_enabled;
         if generation == self.generation && config == self.config {
             self.auth_failed = false;
             self.cooldown = 0;
@@ -279,12 +314,36 @@ impl Service {
             self.core.ingest(p, now);
         }
     }
+    pub fn reconcile_idle(&mut self, engine: &Engine, paused: bool, now: u64) {
+        let gate = if !engine.idle_banter_available() {
+            IdleGate::Blocked
+        } else if paused {
+            IdleGate::Paused
+        } else {
+            IdleGate::Ready
+        };
+        if self.core.update_idle(gate, now) {
+            self.abort_task();
+            self.outcome = "空闲碎碎念已暂停".into();
+        }
+    }
+
+    #[cfg(feature = "e2e")]
+    pub fn set_idle_dice(&mut self, faces: Vec<u8>) -> Result<(), String> {
+        if faces.iter().any(|face| !(1..=6).contains(face)) {
+            return Err("骰子点数须为 1 到 6".into());
+        }
+        self.dice = faces.into();
+        Ok(())
+    }
+
     pub fn refresh(
         &mut self,
         engine: &Engine,
         preview: bool,
         now: u64,
         dispatch: bool,
+        idle_provider_available: Option<bool>,
     ) -> BanterProjection {
         self.core
             .retain(|key| engine.tracked_sessions().any(|tracked| tracked == key));
@@ -356,10 +415,26 @@ impl Service {
             self.outcome = "完成小结已显示".into();
         }
         let progress = self.core.tick(work, now, dispatch);
-        if let Some(request) = completion.or(progress) {
+        let request = completion.or(progress).or_else(|| {
+            let idle_dispatch = if !idle_provider_available? && dispatch == Dispatch::Ready {
+                Dispatch::Unavailable
+            } else {
+                dispatch
+            };
+            self.core.tick_idle(now, idle_dispatch, || {
+                #[cfg(feature = "e2e")]
+                if let Some(face) = self.dice.pop_front() {
+                    return face;
+                }
+                fastrand::u8(1..=6)
+            })
+        });
+        if let Some(request) = request {
             match self.key_for(&self.config) {
                 Ok(key) => {
-                    self.outcome = if self.core.quiet_activity(request.id).is_some() {
+                    self.outcome = if self.core.has_idle_request() {
+                        "正在生成空闲碎碎念"
+                    } else if self.core.quiet_activity(request.id).is_some() {
                         "正在生成陪伴短句"
                     } else {
                         "正在请求总结"
@@ -383,11 +458,23 @@ impl Service {
         }
         self.core.snapshot()
     }
-    pub fn finish(&mut self, id: u64, result: Outcome, now: u64, certainty: Certainty) {
+    pub fn finish(
+        &mut self,
+        id: u64,
+        result: Outcome,
+        now: u64,
+        certainty: Certainty,
+        window_visible: bool,
+    ) {
         let before = self.core.snapshot().revision;
         let quiet = self.core.quiet_activity(id);
-        let usable = certainty == Certainty::Observed
-            || (certainty == Certainty::Stale && quiet == Some(QuietActivity::AwaitingUpdate));
+        let idle = self.core.has_idle_request();
+        let usable = if idle {
+            window_visible
+        } else {
+            certainty == Certainty::Observed
+                || (certainty == Certainty::Stale && quiet == Some(QuietActivity::AwaitingUpdate))
+        };
         let text = usable
             .then(|| result.as_ref().ok().and_then(|(text, _)| text.clone()))
             .flatten();
@@ -397,7 +484,13 @@ impl Service {
         self.task = None;
         match result {
             Ok((text, usage)) => {
-                self.outcome = if quiet.is_some() && self.core.snapshot().revision != before {
+                self.outcome = if idle {
+                    if self.core.snapshot().revision != before {
+                        "空闲碎碎念已显示"
+                    } else {
+                        "本次空闲碎碎念已跳过"
+                    }
+                } else if quiet.is_some() && self.core.snapshot().revision != before {
                     if text.is_some() {
                         "陪伴短句已显示"
                     } else {
@@ -432,9 +525,13 @@ pub async fn probe(
     config: BanterConfig,
     key: String,
 ) -> Result<(String, BanterUsage), String> {
-    let entries = [Entry::Progress(
-        "测试样例：登录测试已通过，保存设置的测试还在运行。".into(),
-    )];
+    let entries = if config.idle_enabled && !config.enabled {
+        [Entry::Idle { recent: vec![] }]
+    } else {
+        [Entry::Progress(
+            "测试样例：登录测试已通过，保存设置的测试还在运行。".into(),
+        )]
+    };
     let (text, usage) = banter_api::summarize(&client, &config, &key, &entries)
         .await
         .map_err(|e| e.label().to_owned())?;

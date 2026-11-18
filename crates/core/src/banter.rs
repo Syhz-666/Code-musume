@@ -2,6 +2,9 @@ use crate::{adapter::short_hash, engine::MAX_SESSIONS};
 use code_musume_contracts::{Agent, BanterKind, BanterProjection, VisibleProgress};
 use std::collections::{BTreeMap, VecDeque};
 use unicode_segmentation::UnicodeSegmentation;
+mod idle;
+use idle::IdleBanter;
+pub use idle::{IdleDiagnostics, IdleGate};
 
 const SEGMENT_CHARS: usize = 12_000;
 const SEGMENT_MESSAGES: usize = 32;
@@ -43,6 +46,9 @@ pub enum Entry {
     Progress(String),
     Final(String),
     Summary(String),
+    Idle {
+        recent: Vec<String>,
+    },
     Quiet {
         activity: QuietActivity,
         recent_progress: Option<String>,
@@ -53,6 +59,7 @@ impl Entry {
     fn chars(&self) -> usize {
         match self {
             Self::Progress(s) | Self::Final(s) | Self::Summary(s) => s.chars().count(),
+            Self::Idle { recent } => recent.iter().map(|s| s.chars().count()).sum(),
             Self::Quiet {
                 recent_progress,
                 previous_line,
@@ -86,10 +93,11 @@ enum RequestKind {
     Progress,
     Completion,
     Quiet(QuietActivity),
+    Idle,
 }
 struct InFlight {
     id: u64,
-    target: Target,
+    target: Option<Target>,
     version: u64,
     eligible: bool,
     kind: RequestKind,
@@ -105,6 +113,7 @@ struct Completion {
 
 pub struct Banter {
     enabled: bool,
+    idle: IdleBanter,
     segments: BTreeMap<(Agent, String), Segment>,
     target: Option<Target>,
     quiet_since: u64,
@@ -125,6 +134,7 @@ impl Banter {
     pub fn new(instance_id: String, enabled: bool) -> Self {
         Self {
             enabled,
+            idle: IdleBanter::default(),
             segments: BTreeMap::new(),
             target: None,
             quiet_since: 0,
@@ -152,13 +162,95 @@ impl Banter {
     pub fn reset(&mut self, enabled: bool) {
         self.enabled = enabled;
         self.segments.clear();
-        self.in_flight = None;
+        if !self.has_idle_request() {
+            self.in_flight = None;
+        }
         self.finals.clear();
         self.completion = None;
         self.completion_phase = "idle";
         self.target = None;
         self.last_quiet_line = None;
-        self.clear();
+        if self.view.kind != Some(BanterKind::Idle) {
+            self.clear();
+        }
+    }
+    pub fn reset_idle(&mut self, enabled: bool) -> bool {
+        self.idle = IdleBanter::default();
+        self.idle.enabled = enabled;
+        self.cancel_idle()
+    }
+    pub fn idle_resting(&self) -> Option<bool> {
+        self.idle.enabled.then_some(self.idle.resting)
+    }
+    pub fn idle_diagnostics(&self) -> &IdleDiagnostics {
+        &self.idle.diagnostics
+    }
+    pub fn has_idle_request(&self) -> bool {
+        self.in_flight
+            .as_ref()
+            .is_some_and(|f| f.kind == RequestKind::Idle)
+    }
+    fn cancel_idle(&mut self) -> bool {
+        if self.view.kind == Some(BanterKind::Idle) {
+            self.clear();
+        }
+        let abort = self.has_idle_request();
+        if abort {
+            self.in_flight = None;
+            self.idle.diagnostics.last_skip = Some("interrupted");
+        }
+        abort
+    }
+    pub fn update_idle(&mut self, mut gate: IdleGate, now: u64) -> bool {
+        if !self.idle.enabled || self.completion.is_some() {
+            gate = IdleGate::Blocked;
+        }
+        self.idle.update(gate, now);
+        if gate != IdleGate::Ready {
+            return self.cancel_idle();
+        }
+        if self.view.kind == Some(BanterKind::Idle)
+            && self.view.expires_at_ms.is_some_and(|end| now >= end)
+        {
+            self.clear();
+        }
+        false
+    }
+    pub fn tick_idle(
+        &mut self,
+        now: u64,
+        dispatch: Dispatch,
+        dice: impl FnOnce() -> u8,
+    ) -> Option<Request> {
+        if dispatch == Dispatch::Observe || !self.idle.roll(now, dice) {
+            return None;
+        }
+        if self.completion.is_some()
+            || self.in_flight.is_some()
+            || dispatch == Dispatch::Unavailable
+        {
+            self.idle.diagnostics.last_skip = Some(if dispatch == Dispatch::Unavailable {
+                "service-unavailable"
+            } else {
+                "request-busy"
+            });
+            return None;
+        }
+        self.idle.diagnostics.requests += 1;
+        self.request_id += 1;
+        self.in_flight = Some(InFlight {
+            id: self.request_id,
+            target: None,
+            version: 0,
+            eligible: true,
+            kind: RequestKind::Idle,
+        });
+        Some(Request {
+            id: self.request_id,
+            entries: vec![Entry::Idle {
+                recent: self.idle.recent.iter().cloned().collect(),
+            }],
+        })
     }
     pub fn snapshot(&self) -> BanterProjection {
         self.view.clone()
@@ -168,7 +260,7 @@ impl Banter {
         self.finals.retain(|key, _| keep(key));
     }
     pub fn ingest(&mut self, p: VisibleProgress, now: u64) {
-        if !self.enabled || p.text.trim().is_empty() {
+        if !self.enabled || p.kind == BanterKind::Idle || p.text.trim().is_empty() {
             return;
         }
         if p.text.chars().count() > MAX_PROGRESS {
@@ -224,8 +316,7 @@ impl Banter {
         {
             self.quiet_since = now;
             if let Some(flight) = self.in_flight.as_mut().filter(|flight| {
-                matches!(flight.kind, RequestKind::Quiet(_))
-                    && Some(&flight.target) == self.target.as_ref()
+                matches!(flight.kind, RequestKind::Quiet(_)) && flight.target == self.target
             }) {
                 flight.eligible = false;
             }
@@ -246,7 +337,11 @@ impl Banter {
             return false;
         }
         let mut abort_task = self.cancel_completion("superseded");
-        if self.in_flight.as_ref().is_some_and(|f| f.target == target) {
+        if self
+            .in_flight
+            .as_ref()
+            .is_some_and(|f| f.target.as_ref() == Some(&target))
+        {
             self.in_flight = None;
             abort_task = true;
         }
@@ -321,7 +416,7 @@ impl Banter {
                 c.shown = true;
                 self.completion_phase = "shown";
                 self.completion_shown += 1;
-                self.show(&target, text, now, BanterKind::Completion);
+                self.show(Some(&target), text, now, BanterKind::Completion);
                 return (None, false);
             }
         }
@@ -341,7 +436,7 @@ impl Banter {
             self.completion_requests += 1;
             self.in_flight = Some(InFlight {
                 id: self.request_id,
-                target: c.target.clone(),
+                target: Some(c.target.clone()),
                 version: 0,
                 eligible: true,
                 kind: RequestKind::Completion,
@@ -373,7 +468,7 @@ impl Banter {
             if let Some(flight) = self
                 .in_flight
                 .as_mut()
-                .filter(|f| f.kind != RequestKind::Completion)
+                .filter(|f| matches!(f.kind, RequestKind::Progress | RequestKind::Quiet(_)))
             {
                 flight.eligible = false;
             }
@@ -454,7 +549,7 @@ impl Banter {
         self.request_id += 1;
         self.in_flight = Some(InFlight {
             id: self.request_id,
-            target,
+            target: Some(target),
             version,
             eligible: true,
             kind,
@@ -475,6 +570,21 @@ impl Banter {
             return false;
         }
         let flight = self.in_flight.take().unwrap();
+        if flight.kind == RequestKind::Idle {
+            match text.and_then(clean_summary) {
+                Some(text) if !self.idle.recent.contains(&text) => {
+                    if self.idle.recent.len() == 3 {
+                        self.idle.recent.pop_front();
+                    }
+                    self.idle.recent.push_back(text.clone());
+                    self.idle.diagnostics.shown += 1;
+                    self.show(None, text, now, BanterKind::Idle);
+                }
+                Some(_) => self.idle.diagnostics.last_skip = Some("duplicate"),
+                None => self.idle.diagnostics.last_skip = Some("no-line"),
+            }
+            return true;
+        }
         if flight.kind == RequestKind::Completion {
             let summary = text.and_then(clean_summary);
             if summary.is_none() {
@@ -491,23 +601,21 @@ impl Banter {
             }
             return true;
         }
+        let target = flight.target.unwrap();
         if matches!(flight.kind, RequestKind::Quiet(_)) {
             if flight.eligible {
                 if let Some(text) = text.and_then(clean_summary) {
                     if self.last_quiet_line.as_ref() != Some(&text) {
                         self.last_quiet_line = Some(text.clone());
-                        self.show(&flight.target, text, now, BanterKind::Progress);
+                        self.show(Some(&target), text, now, BanterKind::Progress);
                     }
                 } else {
-                    self.show_quiet_fallback(&flight.target, now);
+                    self.show_quiet_fallback(&target, now);
                 }
             }
             return true;
         }
-        let Some(segment) = self
-            .segments
-            .get_mut(&(flight.target.0, flight.target.1.clone()))
-        else {
+        let Some(segment) = self.segments.get_mut(&(target.0, target.1.clone())) else {
             return true;
         };
         if flight.eligible && flight.version == segment.version {
@@ -515,8 +623,8 @@ impl Banter {
                 if segment.last_summary.as_ref() != Some(&text) {
                     segment.last_summary = Some(text.clone());
                     segment.entries.push(Entry::Summary(text.clone()));
-                    if self.target.as_ref() == Some(&flight.target) {
-                        self.show(&flight.target, text, now, BanterKind::Progress);
+                    if self.target.as_ref() == Some(&target) {
+                        self.show(Some(&target), text, now, BanterKind::Progress);
                     }
                 }
             }
@@ -524,12 +632,17 @@ impl Banter {
         true
     }
     fn show_quiet_fallback(&mut self, target: &Target, now: u64) {
-        self.show(target, QUIET_FALLBACK.into(), now, BanterKind::Progress);
+        self.show(
+            Some(target),
+            QUIET_FALLBACK.into(),
+            now,
+            BanterKind::Progress,
+        );
     }
-    fn show(&mut self, target: &Target, text: String, now: u64, kind: BanterKind) {
+    fn show(&mut self, target: Option<&Target>, text: String, now: u64, kind: BanterKind) {
         self.view.revision += 1;
-        self.view.agent = Some(target.0);
-        self.view.session_label = Some(short_hash(&target.1));
+        self.view.agent = target.map(|target| target.0);
+        self.view.session_label = target.map(|target| short_hash(&target.1));
         self.view.text = Some(text);
         self.view.kind = Some(kind);
         self.view.expires_at_ms = Some(now + BUBBLE);
@@ -567,6 +680,85 @@ pub fn clean_summary(text: String) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn idle_dice_use_awake_and_rest_intervals_and_skip_missed_deadlines() {
+        let mut b = Banter::new("test".into(), false);
+        b.reset_idle(true);
+        b.update_idle(IdleGate::Ready, 0);
+        assert!(b
+            .tick_idle(29_999, Dispatch::Ready, || panic!("too early"))
+            .is_none());
+        for (i, face) in [1, 1, 2, 1, 1, 1].into_iter().enumerate() {
+            assert!(b
+                .tick_idle(30_000 * (i as u64 + 1), Dispatch::Ready, || face)
+                .is_none());
+            assert_eq!(b.idle_resting(), Some(i == 5));
+        }
+        // Hidden while resting. Resume with a full interval and a new streak.
+        assert!(b.tick_idle(195_000, Dispatch::Ready, || 6).is_none());
+        b.update_idle(IdleGate::Paused, 196_000);
+        b.update_idle(IdleGate::Ready, 220_000);
+        assert_eq!(b.idle_resting(), Some(true));
+        for (at, face) in [(235_000, 6), (250_000, 2), (265_000, 6), (280_000, 6)] {
+            assert!(b.tick_idle(at, Dispatch::Ready, || face).is_none());
+            assert_eq!(b.idle_resting(), Some(at < 280_000));
+        }
+        assert!(b
+            .tick_idle(309_999, Dispatch::Ready, || panic!("too early"))
+            .is_none());
+        assert!(b
+            .tick_idle(900_000, Dispatch::Ready, || panic!("missed deadline"))
+            .is_none());
+        assert!(b
+            .tick_idle(900_000, Dispatch::Ready, || panic!("catch-up"))
+            .is_none());
+        assert!(b.tick_idle(930_000, Dispatch::Ready, || 6).is_some());
+    }
+
+    #[test]
+    fn idle_lines_only_remember_displayed_text_and_cancel_on_work_or_completion() {
+        let mut b = Banter::new("test".into(), true);
+        b.reset_idle(true);
+        b.update_idle(IdleGate::Ready, 0);
+        progress(
+            &mut b,
+            Agent::Codex,
+            "earlier",
+            "p",
+            "private work context",
+            1,
+        );
+        assert!(b.tick_idle(30_000, Dispatch::Unavailable, || 6).is_none());
+        let first = b.tick_idle(60_000, Dispatch::Ready, || 6).unwrap();
+        assert!(matches!(&first.entries[..], [Entry::Idle { recent }] if recent.is_empty()));
+        assert!(b.finish(first.id, Some("发梢又翘啦。".into()), 60_001));
+        let shown = b.snapshot();
+        assert_eq!(shown.kind, Some(BanterKind::Idle));
+        assert_eq!(shown.agent, None);
+        assert_eq!(shown.session_label, None);
+        assert_eq!(shown.expires_at_ms, Some(68_001));
+        b.update_idle(IdleGate::Ready, 68_001);
+        assert!(b.snapshot().text.is_none());
+        let duplicate = b.tick_idle(90_000, Dispatch::Ready, || 6).unwrap();
+        assert!(
+            matches!(&duplicate.entries[..], [Entry::Idle { recent }] if recent == &["发梢又翘啦。"])
+        );
+        assert!(b.finish(duplicate.id, Some("发梢又翘啦。".into()), 90_001));
+        assert!(b.snapshot().text.is_none());
+        let late = b.tick_idle(120_000, Dispatch::Ready, || 6).unwrap();
+        assert!(b.update_idle(IdleGate::Blocked, 120_001));
+        assert!(!b.finish(late.id, Some("这句已经过时。".into()), 120_002));
+        b.update_idle(IdleGate::Ready, 121_000);
+        let finishing = b.tick_idle(151_000, Dispatch::Ready, || 6).unwrap();
+        assert!(matches!(&finishing.entries[..], [Entry::Idle { recent }] if recent.len() == 1));
+        b.completed(target(Agent::Codex, "earlier").unwrap(), 151_001);
+        assert!(b.update_idle(IdleGate::Ready, 151_001));
+        assert!(!b.finish(finishing.id, None, 151_002));
+        assert!(b
+            .tick_idle(181_001, Dispatch::Ready, || panic!("completion owns idle"))
+            .is_none());
+    }
 
     fn final_text(b: &mut Banter, turn: &str, now: u64) {
         b.ingest(

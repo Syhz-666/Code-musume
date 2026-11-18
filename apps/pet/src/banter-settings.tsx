@@ -161,6 +161,17 @@ export function BanterSettings() {
             服务支持 Anthropic 提示缓存
           </label>
         )}
+        <label>
+          <input
+            type="checkbox"
+            checked={draft.idleEnabled}
+            onChange={(e) => setDraft({ ...draft, idleEnabled: e.target.checked })}
+          />
+          开启空闲碎碎念
+        </label>
+        <small>
+          清醒空闲时每 30 秒掷一次骰，平均约 3 分钟请求一次。只发送角色设定、昵称和近期闲聊。
+        </small>
         <div className="actions">
           <button type="button" onClick={() => void run("save")}>
             保存

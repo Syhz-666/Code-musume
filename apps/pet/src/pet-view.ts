@@ -439,7 +439,7 @@ function updateBubble() {
   const summary =
     banter?.instanceId === p.instanceId &&
     !manualPreviewActive() &&
-    (banter.kind === "completion"
+    (banter.kind === "completion" || banter.kind === "idle"
       ? p.state === "idle" && !p.bubbleKey
       : banter.kind === "progress" &&
         banter.agent === p.dominantAgent &&

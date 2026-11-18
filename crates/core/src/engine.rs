@@ -223,6 +223,7 @@ pub struct Engine {
     diagnostics: VecDeque<Diagnostic>,
     seq: u64,
     last_activity: u64,
+    idle_resting: Option<bool>,
     pub config: Config,
     missed: u64,
     codex_approval_sync: bool,
@@ -239,6 +240,7 @@ impl Engine {
             diagnostics: VecDeque::new(),
             seq: 0,
             last_activity: 0,
+            idle_resting: None,
             missed: 0,
             codex_approval_sync: false,
             character_forms: BTreeMap::from([
@@ -269,6 +271,23 @@ impl Engine {
     }
     pub fn snapshot(&self) -> Projection {
         self.projection.clone()
+    }
+    pub fn idle_banter_available(&self) -> bool {
+        let p = &self.projection;
+        matches!(p.state, DisplayState::Idle | DisplayState::Sleeping)
+            && p.bubble_key.is_none()
+            && (self.missed == 0 || !p.sessions.is_empty())
+            && p.sessions.iter().all(|session| {
+                session.state == DisplayState::Idle
+                    && session.certainty == Certainty::Observed
+                    && session.pending_count == 0
+            })
+    }
+    pub fn set_idle_resting(&mut self, resting: Option<bool>, now: u64) {
+        if self.idle_resting != resting {
+            self.idle_resting = resting;
+            self.tick(now);
+        }
     }
     pub fn active_turn(&self, agent: Agent, id: &str) -> Option<&str> {
         let actor = self
@@ -905,9 +924,10 @@ impl Engine {
         } else {
             (DisplayState::Idle, Certainty::Unknown, None, None, 0)
         };
-        let quiet = now.saturating_sub(self.last_activity);
         let state = if state == DisplayState::Idle
-            && quiet >= SLEEP_MS
+            && self
+                .idle_resting
+                .unwrap_or_else(|| now.saturating_sub(self.last_activity) >= SLEEP_MS)
             && self
                 .sessions
                 .values()

@@ -35,6 +35,7 @@ base64 = "0.22"
 image = { version = "0.25", default-features = false, features = ["png", "webp"] }
 reqwest = { version = "0.13", default-features = false, features = ["json", "native-tls"] }
 httpdate = "1"
+fastrand = "2"
 
 [target.'cfg(windows)'.dependencies]
 json-patch = "4.2"

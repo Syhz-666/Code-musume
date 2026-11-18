@@ -298,6 +298,109 @@ describe("Actual desktop event chain and settings", () => {
       await new Promise((resolve) => mock.close(resolve));
     }
   });
+  it("rolls for idle chatter, rests, wakes, and yields to work in both renderers", async function () {
+    this.timeout(150_000);
+    const requests = [];
+    let releaseLate;
+    const mock = createServer(async (req, res) => {
+      const chunks = [];
+      for await (const chunk of req) chunks.push(chunk);
+      const { messages } = JSON.parse(Buffer.concat(chunks).toString());
+      const complete = (line) => {
+        if (res.destroyed) return;
+        res.setHeader("content-type", "application/json");
+        res.end(
+          JSON.stringify({ choices: [{ finish_reason: "stop", message: { content: line } }] }),
+        );
+      };
+      requests.push(JSON.parse(messages.at(-1).content));
+      if (requests.length % 2 === 0) releaseLate = () => complete("迟到的话。");
+      else complete("想靠一会儿。");
+    });
+    await new Promise((resolve) => mock.listen(0, "127.0.0.1", resolve));
+    const status = () => nativeInvoke("get_banter_status");
+    const idle = async () => (await nativeInvoke("get_pipeline_diagnostics")).banterIdle;
+    const advance = (ms) => nativeInvoke("e2e_advance_clock", { ms });
+    try {
+      await nativeInvoke("e2e_set_clock_paused", { paused: true });
+      const { config } = await status();
+      await nativeInvoke("save_banter", {
+        config: {
+          ...config,
+          enabled: false,
+          baseUrl: `http://127.0.0.1:${mock.address().port}/v1`,
+          model: "idle-mock",
+        },
+        key: "synthetic-key",
+        deleteKey: false,
+      });
+      await tab("使用偏好");
+      await (await browser.$('[data-testid="open-banter"]')).click();
+      const panel = await browser.$('[data-testid="banter-settings"]');
+      await panel.waitForDisplayed();
+      const workToggle = await panel.$("label=开启工作碎碎念");
+      const idleToggle = await panel.$("label=开启空闲碎碎念");
+      assert.equal(await (await idleToggle.$("input")).isSelected(), false);
+      await idleToggle.click();
+      await (await panel.$("button=保存")).click();
+      await browser.waitUntil(async () => (await status()).config.idleEnabled);
+      assert.equal(await (await workToggle.$("input")).isSelected(), false);
+
+      for (const [index, renderer] of ["pixi", "dom"].entries()) {
+        await selectWindow("settings");
+        const visible = { ...initialConfig, renderer, userHidden: false };
+        await nativeInvoke("set_config", { config: visible });
+        await nativeInvoke("reset_sessions");
+        await nativeInvoke("e2e_idle_dice", { faces: [6, 1, 1, 1, 6, 6, 6] });
+        await pet({ state: "idle", renderer, visualReady: true });
+        await advance(30_000);
+        const bubble = await browser.$('.bubble[data-kind="banter"]');
+        await bubble.waitForDisplayed();
+        assert.equal(await bubble.getText(), "想靠一会儿。");
+        assert.deepEqual(requests[index * 2], { 场景: "空闲时自言自语", 最近说过: [] });
+
+        await selectWindow("settings");
+        await nativeInvoke("e2e_recreate_pet");
+        await pet({ state: "idle", renderer, visualReady: true }, { prepare: false });
+        await browser.waitUntil(async () =>
+          (await browser.$(".bubble")).getText().then((text) => text === "想靠一会儿。"),
+        );
+        for (const rolls of [2, 3, 4]) {
+          await advance(30_000);
+          await browser.waitUntil(async () => (await idle()).rolls === rolls);
+        }
+        await pet({ state: "sleeping", renderer });
+        await selectWindow("settings");
+        await nativeInvoke("set_config", { config: { ...visible, userHidden: true } });
+        await advance(60_000);
+        assert.equal((await idle()).rolls, 4);
+        await nativeInvoke("set_config", { config: visible });
+        await pet({ state: "sleeping", renderer });
+        await advance(15_000);
+        await browser.waitUntil(async () => (await idle()).rolls === 5);
+        assert.equal((await nativeInvoke("get_projection")).state, "sleeping");
+        await advance(15_000);
+        await pet({ state: "idle", renderer });
+        assert.equal(requests.length, index * 2 + 1);
+        await advance(30_000);
+        await browser.waitUntil(() => requests.length === index * 2 + 2 && Boolean(releaseLate));
+        assert.deepEqual(requests.at(-1).最近说过, ["想靠一会儿。"]);
+        await hook(index === 0 ? cx : cc, "UserPromptSubmit");
+        await pet({ state: "thinking", renderer });
+        releaseLate();
+        releaseLate = undefined;
+        assert.equal((await nativeInvoke("get_banter_projection")).kind, null);
+        assert.equal((await idle()).lastSkip, "interrupted");
+      }
+    } finally {
+      await selectWindow("settings");
+      const { config } = await status();
+      await nativeInvoke("save_banter", { config, key: null, deleteKey: true });
+      await nativeInvoke("e2e_set_clock_paused", { paused: false });
+      mock.closeAllConnections();
+      await new Promise((resolve) => mock.close(resolve));
+    }
+  });
   it("plays the approved idle atlas across rows and loops, including manual preview and reduced motion", async () => {
     for (const renderer of ["pixi", "dom"]) {
       await selectWindow("settings");
