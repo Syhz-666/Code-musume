@@ -1,5 +1,5 @@
 use crate::{
-    banter_api::{self, Failure},
+    banter_api::{self, Failure, SummaryResponse},
     banter_credentials::Credentials,
     banter_diagnostics::{self, BanterDiagnostics, Trace},
     claude_progress::Transcript,
@@ -17,7 +17,7 @@ use code_musume_hook::runtime::{atomic_write, config_dir};
 use std::{collections::BTreeMap, fs};
 use tokio::sync::{mpsc, watch};
 
-pub type Outcome = Result<(Option<String>, BanterUsage), Failure>;
+pub type Outcome = Result<SummaryResponse, Failure>;
 
 pub struct Service {
     pub config: BanterConfig,
@@ -598,7 +598,12 @@ impl Service {
                 || (certainty == Certainty::Stale && quiet == Some(QuietActivity::AwaitingUpdate))
         };
         let text = usable
-            .then(|| result.as_ref().ok().and_then(|(text, _)| text.clone()))
+            .then(|| {
+                result
+                    .as_ref()
+                    .ok()
+                    .and_then(|response| response.line.as_ref().ok().cloned())
+            })
             .flatten();
         let Some(disposition) = self.core.finish(id, text, now) else {
             self.diagnostics.record(
@@ -619,7 +624,14 @@ impl Service {
                     .clone()
                     .outcome("result", disposition)
                     .elapsed(now.saturating_sub(started))
-                    .provider_error(result.as_ref().err().map(Failure::label)),
+                    .provider_error(result.as_ref().err().map(Failure::label))
+                    .output_rejection(result.as_ref().ok().and_then(|response| {
+                        response
+                            .line
+                            .as_ref()
+                            .err()
+                            .map(|rejection| rejection.code())
+                    })),
                 now,
             );
             if view.revision != before {
@@ -628,7 +640,7 @@ impl Service {
         }
         self.task = None;
         match result {
-            Ok((text, usage)) => {
+            Ok(SummaryResponse { line, usage }) => {
                 self.outcome = if idle {
                     if self.core.snapshot().revision != before {
                         "空闲碎碎念已显示"
@@ -636,7 +648,7 @@ impl Service {
                         "本次空闲碎碎念已跳过"
                     }
                 } else if quiet.is_some() && self.core.snapshot().revision != before {
-                    if text.is_some() {
+                    if line.is_ok() {
                         "陪伴短句已显示"
                     } else {
                         "无合格的陪伴短句，已显示本地提示"
@@ -645,7 +657,7 @@ impl Service {
                     "总结成功"
                 } else if self.core.completion_phase == "ready" {
                     "完成小结已生成"
-                } else if text.is_some() {
+                } else if line.is_ok() {
                     "已收到总结，当前无法展示"
                 } else {
                     "无可展示的短句"
@@ -677,8 +689,8 @@ pub async fn probe(
             "测试样例：登录测试已通过，保存设置的测试还在运行。".into(),
         )]
     };
-    let (text, usage) = banter_api::summarize(&client, &config, &key, &entries)
+    let SummaryResponse { line, usage } = banter_api::summarize(&client, &config, &key, &entries)
         .await
         .map_err(|e| e.label().to_owned())?;
-    Ok((text.ok_or("服务没有返回合格短句")?, usage))
+    Ok((line.map_err(|_| "服务没有返回合格短句")?, usage))
 }

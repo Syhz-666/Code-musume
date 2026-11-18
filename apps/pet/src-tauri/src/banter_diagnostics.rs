@@ -19,6 +19,8 @@ pub struct Trace {
     revision: Option<u64>,
     elapsed_ms: Option<u64>,
     provider_error: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    output_rejection: Option<&'static str>,
 }
 
 impl Trace {
@@ -35,6 +37,7 @@ impl Trace {
             revision: None,
             elapsed_ms: None,
             provider_error: None,
+            output_rejection: None,
         }
     }
 
@@ -72,6 +75,11 @@ impl Trace {
 
     pub fn provider_error(mut self, error: Option<&'static str>) -> Self {
         self.provider_error = error;
+        self
+    }
+
+    pub fn output_rejection(mut self, reason: Option<&'static str>) -> Self {
+        self.output_rejection = reason;
         self
     }
 }

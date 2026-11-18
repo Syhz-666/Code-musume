@@ -115,6 +115,7 @@ describe("Actual desktop event chain and settings", () => {
   it("configures banter and displays progress and completion summaries in both renderers", async function () {
     this.timeout(150_000);
     const requests = [];
+    let completionReply = "\n 「登录过啦，保存还待查。」\r\n";
     const mock = createServer(async (req, res) => {
       const chunks = [];
       for await (const chunk of req) chunks.push(chunk);
@@ -127,7 +128,7 @@ describe("Actual desktop event chain and settings", () => {
           choices: [
             {
               finish_reason: "stop",
-              message: { content: final ? "登录过啦，保存还待查。" : "登录测试过啦。" },
+              message: { content: final ? completionReply : "登录测试过啦。" },
             },
           ],
           usage: {
@@ -333,6 +334,31 @@ describe("Actual desktop event chain and settings", () => {
         );
       });
       assert.equal(requests.length, 4);
+
+      completionReply = "字".repeat(21);
+      await nativeInvoke("reset_sessions");
+      await hook(cx, "UserPromptSubmit", {}, "long-summary", "final-turn");
+      await pet({ state: "thinking" });
+      await browser.waitUntil(() => peer.following("long-summary"));
+      peer.beginFinalOnly("long-summary");
+      const previousFinals = (await nativeInvoke("get_pipeline_diagnostics")).codexApprovalSync
+        .messageCapture.finalMessages;
+      peer.finishFinalOnly("long-summary");
+      await browser.waitUntil(async () => {
+        const { codexApprovalSync } = await nativeInvoke("get_pipeline_diagnostics");
+        return codexApprovalSync.messageCapture.finalMessages > previousFinals;
+      });
+      await hook(cx, "Stop", {}, "long-summary", "final-turn");
+      await browser.waitUntil(async () => {
+        const { banterPipeline } = await nativeInvoke("get_pipeline_diagnostics");
+        return banterPipeline.trace.entries.some(
+          (entry) => entry.kind === "completion" && entry.outputRejection === "too-long",
+        );
+      });
+      await nativeInvoke("e2e_advance_clock", { ms: 3000 });
+      await pet({ state: "idle" });
+      assert.equal((await nativeInvoke("get_banter_projection")).text, null);
+      assert.equal(requests.length, 5);
     } finally {
       await peer?.close();
       await selectWindow("settings");

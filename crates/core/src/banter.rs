@@ -704,17 +704,41 @@ impl Banter {
 }
 
 pub fn clean_summary(text: String) -> Option<String> {
+    validate_summary(&text).ok().map(str::to_owned)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SummaryRejection {
+    Empty,
+    TooLong,
+    Format,
+}
+
+impl SummaryRejection {
+    pub fn code(self) -> &'static str {
+        match self {
+            Self::Empty => "empty",
+            Self::TooLong => "too-long",
+            Self::Format => "invalid-format",
+        }
+    }
+}
+
+pub fn validate_summary(text: &str) -> Result<&str, SummaryRejection> {
     let trimmed = text.trim_matches(' ');
-    if trimmed.is_empty()
-        || trimmed.graphemes(true).count() > 20
-        || trimmed.chars().count() > 256
-        || trimmed.starts_with(['"', '\'', '“', '「', '#', '-', '*', '>'])
-        || trimmed.contains(['`', '<', '>'])
+    if trimmed.is_empty() {
+        return Err(SummaryRejection::Empty);
+    }
+    if trimmed.chars().take(257).count() > 256 || trimmed.graphemes(true).take(21).count() > 20 {
+        return Err(SummaryRejection::TooLong);
+    }
+    if trimmed.starts_with(['"', '\'', '“', '「', '『', '#', '-', '*', '>'])
+        || trimmed.contains(['`', '<', '>', '\u{2028}', '\u{2029}'])
         || trimmed.chars().any(char::is_control)
     {
-        return None;
+        return Err(SummaryRejection::Format);
     }
-    Some(trimmed.to_owned())
+    Ok(trimmed)
 }
 
 #[cfg(test)]
