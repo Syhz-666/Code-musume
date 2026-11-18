@@ -16,10 +16,12 @@ use tokio::{
     time::{interval, sleep, timeout, Instant, MissedTickBehavior},
 };
 
+mod framing;
+use framing::{Frame, Frames};
+
 #[cfg(not(feature = "e2e"))]
 pub const PIPE: &str = r"\\.\pipe\codex-ipc";
 const SUPPORTED_SYNC_VERSIONS: [u32; 2] = [11, 13];
-const MAX_FRAME: usize = 32 * 1024 * 1024;
 const RETRY: Duration = Duration::from_secs(2);
 const WRITE_TIMEOUT: Duration = Duration::from_secs(2);
 
@@ -312,6 +314,18 @@ pub struct TransportDiagnostics {
     last_handshake_at_unix_ms: Option<u64>,
     last_open_failure: Option<TransportFailure>,
     last_disconnect: Option<TransportFailure>,
+    filtered_frames: u64,
+    removed_image_bytes: u64,
+    dropped_frames: u64,
+    last_dropped_frame: Option<DroppedFrame>,
+}
+
+#[derive(Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DroppedFrame {
+    bytes: usize,
+    reason: &'static str,
+    at_unix_ms: Option<u64>,
 }
 
 #[derive(Clone, Default, PartialEq, Eq, serde::Serialize)]
@@ -699,30 +713,6 @@ async fn sync(
     Ok(())
 }
 
-#[derive(Default)]
-struct Frames(Vec<u8>);
-
-impl Frames {
-    fn next(&mut self) -> io::Result<Option<Value>> {
-        let Some(header) = self.0.get(..4) else {
-            return Ok(None);
-        };
-        let len = u32::from_le_bytes(header.try_into().unwrap()) as usize;
-        if len == 0 || len > MAX_FRAME {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "invalid frame size",
-            ));
-        }
-        let Some(body) = self.0.get(4..4 + len) else {
-            return Ok(None);
-        };
-        let value = serde_json::from_slice(body)?;
-        self.0.drain(..4 + len);
-        Ok(Some(value))
-    }
-}
-
 async fn connected(
     mut pipe: NamedPipeClient,
     wanted: &mut watch::Receiver<Vec<String>>,
@@ -758,8 +748,25 @@ async fn connected(
             read = pipe.read(&mut chunk) => {
                 let size = read.map_err(|e| TransportFailure::new("pipe-read", Some(e)))?;
                 if size == 0 { return Err(TransportFailure::new("pipe-eof", None)); }
-                frames.0.extend_from_slice(&chunk[..size]);
-                while let Some(msg) = frames.next().map_err(|e| TransportFailure::new("wire-frame", Some(e)))? {
+                frames.push(&chunk[..size]);
+                while let Some(frame) = frames.next().map_err(|e| TransportFailure::new("wire-frame", Some(e)))? {
+                    let msg = match frame {
+                        Frame::Message { message, removed_image_bytes } => {
+                            if removed_image_bytes > 0 {
+                                observer.diagnostics.transport.filtered_frames += 1;
+                                observer.diagnostics.transport.removed_image_bytes += removed_image_bytes as u64;
+                            }
+                            message
+                        }
+                        Frame::Dropped { bytes, reason } => {
+                            observer.diagnostics.transport.dropped_frames += 1;
+                            observer.diagnostics.transport.last_dropped_frame = Some(DroppedFrame {
+                                bytes, reason, at_unix_ms: unix_ms(),
+                            });
+                            diagnostics.send_replace(observer.diagnostics.clone());
+                            continue;
+                        }
+                    };
                     if client.is_none() && msg["requestId"] == init && msg["type"] == "response" {
                         if msg["resultType"] != "success" {
                             return Err(TransportFailure::new("handshake-rejected", None));
