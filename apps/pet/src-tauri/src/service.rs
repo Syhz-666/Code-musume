@@ -469,7 +469,7 @@ impl Native {
                         banter.progress(generation, &engine, message, state.clock.now());
                     },
                     Some((id, result)) = outcome_rx.recv() => {
-                        banter.finish(id, result, state.clock.now(), engine.snapshot().certainty == Certainty::Observed);
+                        banter.finish(id, result, state.clock.now(), engine.snapshot().certainty);
                     },
                     Some(update) = probe_finished.recv() => {
                         probe_active = false;

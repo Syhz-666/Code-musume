@@ -8,6 +8,7 @@ const SEGMENT_MESSAGES: usize = 32;
 const MAX_PROGRESS: usize = 4_000;
 const INTERVAL: u64 = 30_000;
 const QUIET: u64 = 120_000;
+const QUIET_FALLBACK: &str = "还没新进展，我陪你等会儿。";
 const RETENTION: u64 = 600_000;
 const BUBBLE: u64 = 8_000;
 const FINAL_WINDOW: u64 = 2_000;
@@ -23,16 +24,44 @@ pub enum CompletionGate {
     Blocked,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum QuietActivity {
+    Working,
+    Thinking,
+    AwaitingUpdate,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Dispatch {
+    Observe,
+    Unavailable,
+    Ready,
+}
+
 #[derive(Clone)]
 pub enum Entry {
     Progress(String),
     Final(String),
     Summary(String),
+    Quiet {
+        activity: QuietActivity,
+        recent_progress: Option<String>,
+        previous_line: Option<String>,
+    },
 }
 impl Entry {
     fn chars(&self) -> usize {
         match self {
             Self::Progress(s) | Self::Final(s) | Self::Summary(s) => s.chars().count(),
+            Self::Quiet {
+                recent_progress,
+                previous_line,
+                ..
+            } => recent_progress
+                .iter()
+                .chain(previous_line)
+                .map(|text| text.chars().count())
+                .sum(),
         }
     }
 }
@@ -52,12 +81,18 @@ pub struct Request {
     pub id: u64,
     pub entries: Vec<Entry>,
 }
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum RequestKind {
+    Progress,
+    Completion,
+    Quiet(QuietActivity),
+}
 struct InFlight {
     id: u64,
     target: Target,
     version: u64,
     eligible: bool,
-    kind: BanterKind,
+    kind: RequestKind,
 }
 
 struct Completion {
@@ -73,6 +108,7 @@ pub struct Banter {
     segments: BTreeMap<(Agent, String), Segment>,
     target: Option<Target>,
     quiet_since: u64,
+    last_quiet_line: Option<String>,
     last_request: Option<u64>,
     request_id: u64,
     in_flight: Option<InFlight>,
@@ -92,6 +128,7 @@ impl Banter {
             segments: BTreeMap::new(),
             target: None,
             quiet_since: 0,
+            last_quiet_line: None,
             last_request: None,
             request_id: 0,
             in_flight: None,
@@ -120,6 +157,7 @@ impl Banter {
         self.completion = None;
         self.completion_phase = "idle";
         self.target = None;
+        self.last_quiet_line = None;
         self.clear();
     }
     pub fn snapshot(&self) -> BanterProjection {
@@ -185,6 +223,12 @@ impl Banter {
             .is_some_and(|t| t.0 == key.0 && t.1 == key.1 && t.2 == p.turn)
         {
             self.quiet_since = now;
+            if let Some(flight) = self.in_flight.as_mut().filter(|flight| {
+                matches!(flight.kind, RequestKind::Quiet(_))
+                    && Some(&flight.target) == self.target.as_ref()
+            }) {
+                flight.eligible = false;
+            }
             self.clear_progress();
         }
     }
@@ -243,7 +287,7 @@ impl Banter {
         let abort = self
             .in_flight
             .as_ref()
-            .is_some_and(|f| f.kind == BanterKind::Completion);
+            .is_some_and(|f| f.kind == RequestKind::Completion);
         if abort {
             self.in_flight = None;
         }
@@ -300,7 +344,7 @@ impl Banter {
                 target: c.target.clone(),
                 version: 0,
                 eligible: true,
-                kind: BanterKind::Completion,
+                kind: RequestKind::Completion,
             });
             return (
                 Some(Request {
@@ -313,17 +357,23 @@ impl Banter {
         (None, false)
     }
 
-    pub fn tick(&mut self, target: Option<Target>, now: u64, can_request: bool) -> Option<Request> {
+    pub fn tick(
+        &mut self,
+        work: Option<(Target, QuietActivity)>,
+        now: u64,
+        dispatch: Dispatch,
+    ) -> Option<Request> {
         self.segments
             .retain(|_, s| now.saturating_sub(s.updated) < RETENTION);
-        let target = target.filter(|_| self.enabled);
+        let (target, activity) = work.filter(|_| self.enabled).unzip();
         if self.target != target {
             self.target = target;
             self.quiet_since = now;
+            self.last_quiet_line = None;
             if let Some(flight) = self
                 .in_flight
                 .as_mut()
-                .filter(|f| f.kind == BanterKind::Progress)
+                .filter(|f| f.kind != RequestKind::Completion)
             {
                 flight.eligible = false;
             }
@@ -332,50 +382,100 @@ impl Banter {
         if self.view.expires_at_ms.is_some_and(|end| now >= end) {
             self.clear_progress();
         }
-        let target = self.target.clone()?;
-        let segment = self.segments.get_mut(&(target.0, target.1.clone()));
-        if let Some(segment) = segment {
-            if can_request
-                && self.in_flight.is_none()
-                && segment.attempted != segment.version
-                && segment.turn == target.2
-                && self
-                    .last_request
-                    .is_none_or(|last| now.saturating_sub(last) >= INTERVAL)
-            {
-                segment.attempted = segment.version;
-                self.last_request = Some(now);
-                self.request_id += 1;
-                self.in_flight = Some(InFlight {
-                    id: self.request_id,
-                    target,
-                    version: segment.version,
-                    eligible: true,
-                    kind: BanterKind::Progress,
-                });
-                return Some(Request {
-                    id: self.request_id,
-                    entries: segment.entries.clone(),
-                });
+        if let Some(flight) = self.in_flight.as_mut() {
+            if let RequestKind::Quiet(start_activity) = flight.kind {
+                flight.eligible &= activity == Some(start_activity);
             }
+            return None;
         }
-        if now.saturating_sub(self.quiet_since) >= QUIET {
-            self.quiet_since = now;
-            self.show(
-                &target,
-                "还没新进展，我陪你等会儿。".into(),
+        let target = self.target.clone()?;
+        let activity = activity?;
+        if dispatch == Dispatch::Observe {
+            return None;
+        }
+        let quiet_due = now.saturating_sub(self.quiet_since) >= QUIET;
+        if dispatch == Dispatch::Unavailable {
+            if quiet_due {
+                self.quiet_since = now;
+                self.show_quiet_fallback(&target, now);
+            }
+            return None;
+        }
+        if self
+            .last_request
+            .is_some_and(|last| now.saturating_sub(last) < INTERVAL)
+        {
+            return None;
+        }
+        let mut segment = self
+            .segments
+            .get_mut(&(target.0, target.1.clone()))
+            .filter(|segment| segment.turn == target.2);
+        if let Some(segment) = segment.as_deref_mut().filter(|segment| {
+            activity != QuietActivity::AwaitingUpdate && segment.attempted != segment.version
+        }) {
+            segment.attempted = segment.version;
+            let version = segment.version;
+            let entries = segment.entries.clone();
+            return Some(self.start_work_request(
+                target,
+                version,
+                RequestKind::Progress,
+                entries,
                 now,
-                BanterKind::Progress,
-            );
+            ));
         }
-        None
+        if !quiet_due {
+            return None;
+        }
+        let recent_progress = segment.and_then(|s| {
+            s.entries.iter().rev().find_map(|entry| match entry {
+                Entry::Progress(text) => Some(text.clone()),
+                _ => None,
+            })
+        });
+        self.quiet_since = now;
+        let entries = vec![Entry::Quiet {
+            activity,
+            recent_progress,
+            previous_line: self.last_quiet_line.clone(),
+        }];
+        Some(self.start_work_request(target, 0, RequestKind::Quiet(activity), entries, now))
+    }
+    fn start_work_request(
+        &mut self,
+        target: Target,
+        version: u64,
+        kind: RequestKind,
+        entries: Vec<Entry>,
+        now: u64,
+    ) -> Request {
+        self.last_request = Some(now);
+        self.request_id += 1;
+        self.in_flight = Some(InFlight {
+            id: self.request_id,
+            target,
+            version,
+            eligible: true,
+            kind,
+        });
+        Request {
+            id: self.request_id,
+            entries,
+        }
+    }
+    pub fn quiet_activity(&self, id: u64) -> Option<QuietActivity> {
+        match self.in_flight.as_ref().filter(|f| f.id == id)?.kind {
+            RequestKind::Quiet(activity) => Some(activity),
+            _ => None,
+        }
     }
     pub fn finish(&mut self, id: u64, text: Option<String>, now: u64) -> bool {
         if self.in_flight.as_ref().is_none_or(|f| f.id != id) {
             return false;
         }
         let flight = self.in_flight.take().unwrap();
-        if flight.kind == BanterKind::Completion {
+        if flight.kind == RequestKind::Completion {
             let summary = text.and_then(clean_summary);
             if summary.is_none() {
                 self.cancel_completion("no-summary");
@@ -388,6 +488,19 @@ impl Banter {
             {
                 c.result = summary;
                 self.completion_phase = "ready";
+            }
+            return true;
+        }
+        if matches!(flight.kind, RequestKind::Quiet(_)) {
+            if flight.eligible {
+                if let Some(text) = text.and_then(clean_summary) {
+                    if self.last_quiet_line.as_ref() != Some(&text) {
+                        self.last_quiet_line = Some(text.clone());
+                        self.show(&flight.target, text, now, BanterKind::Progress);
+                    }
+                } else {
+                    self.show_quiet_fallback(&flight.target, now);
+                }
             }
             return true;
         }
@@ -409,6 +522,9 @@ impl Banter {
             }
         }
         true
+    }
+    fn show_quiet_fallback(&mut self, target: &Target, now: u64) {
+        self.show(target, QUIET_FALLBACK.into(), now, BanterKind::Progress);
     }
     fn show(&mut self, target: &Target, text: String, now: u64, kind: BanterKind) {
         self.view.revision += 1;
@@ -471,7 +587,9 @@ mod tests {
         let mut b = Banter::new("test".into(), true);
         progress(&mut b, Agent::Codex, "one", "draft", "checking", 0);
         let t = target(Agent::Codex, "one").unwrap();
-        let work = b.tick(Some(t.clone()), 0, true).unwrap();
+        let work = b
+            .tick(working(Agent::Codex, "one"), 0, Dispatch::Ready)
+            .unwrap();
         final_text(&mut b, "one", 10);
         assert!(b.completed(t, 100));
         assert!(!b.finish(work.id, Some("还在检查。".into()), 110));
@@ -562,23 +680,26 @@ mod tests {
     fn target(agent: Agent, turn: &str) -> Option<Target> {
         Some(Target(agent, "same-session".into(), turn.into()))
     }
+    fn working(agent: Agent, turn: &str) -> Option<(Target, QuietActivity)> {
+        target(agent, turn).map(|target| (target, QuietActivity::Working))
+    }
 
     #[test]
     fn prefix_is_append_only_and_switching_sources_invalidates_inflight_display() {
         let mut b = Banter::new("test".into(), true);
-        let codex = target(Agent::Codex, "one");
-        let claude = target(Agent::ClaudeCode, "one");
+        let codex = working(Agent::Codex, "one");
+        let claude = working(Agent::ClaudeCode, "one");
         progress(&mut b, Agent::Codex, "one", "a", "checking settings", 0);
-        let first = b.tick(codex.clone(), 0, true).unwrap();
+        let first = b.tick(codex.clone(), 0, Dispatch::Ready).unwrap();
         assert!(matches!(&first.entries[..], [Entry::Progress(t)] if t == "checking settings"));
         b.finish(first.id, Some("还在检查设置呢。".into()), 20);
         assert_eq!(b.snapshot().expires_at_ms, Some(8020));
-        b.tick(codex.clone(), 8020, false);
+        b.tick(codex.clone(), 8020, Dispatch::Observe);
         assert_eq!(b.snapshot().text, None);
         progress(&mut b, Agent::Codex, "one", "a", "duplicate", 8050);
         progress(&mut b, Agent::Codex, "one", "b", "settings fixed", 8100);
-        assert!(b.tick(codex.clone(), 29_999, true).is_none());
-        let second = b.tick(codex, 30_000, true).unwrap();
+        assert!(b.tick(codex.clone(), 29_999, Dispatch::Ready).is_none());
+        let second = b.tick(codex, 30_000, Dispatch::Ready).unwrap();
         assert!(
             matches!(&second.entries[..], [Entry::Progress(a), Entry::Summary(s), Entry::Progress(b)]
             if a == "checking settings" && s == "还在检查设置呢。" && b == "settings fixed")
@@ -591,10 +712,10 @@ mod tests {
             "running tests",
             30_050,
         );
-        b.tick(claude.clone(), 30_050, true);
+        b.tick(claude.clone(), 30_050, Dispatch::Ready);
         b.finish(second.id, Some("设置修好啦。".into()), 30_100);
         assert_eq!(b.snapshot().text, None);
-        let third = b.tick(claude, 60_000, true).unwrap();
+        let third = b.tick(claude, 60_000, Dispatch::Ready).unwrap();
         assert!(matches!(&third.entries[..], [Entry::Progress(t)] if t == "running tests"));
         b.reset(false);
         assert!(!b.finish(third.id, Some("这条不应出现。".into()), 60_100));
@@ -603,18 +724,100 @@ mod tests {
     #[test]
     fn quiet_bubble_and_session_retention_follow_virtual_time() {
         let mut b = Banter::new("test".into(), true);
-        let first = target(Agent::Codex, "one");
-        b.tick(first.clone(), 0, true);
-        b.tick(first.clone(), 119_999, true);
+        let first = working(Agent::Codex, "one");
+        b.tick(first.clone(), 0, Dispatch::Unavailable);
+        b.tick(first.clone(), 119_999, Dispatch::Unavailable);
         assert!(b.snapshot().text.is_none());
-        assert!(b.tick(first.clone(), 120_000, true).is_none());
-        assert!(b.snapshot().text.is_some());
-        assert!(b.tick(None, 120_001, true).is_none());
+        assert!(b.tick(first, 120_000, Dispatch::Unavailable).is_none());
+        assert_eq!(b.snapshot().text.as_deref(), Some(QUIET_FALLBACK));
+        assert!(b.tick(None, 120_001, Dispatch::Ready).is_none());
         assert!(b.snapshot().text.is_none());
         progress(&mut b, Agent::Codex, "one", "a", "test failed", 120_002);
-        assert!(b.tick(target(Agent::Codex, "two"), 120_003, true).is_none());
-        b.tick(None, 720_002, true);
+        assert!(b
+            .tick(working(Agent::Codex, "two"), 120_003, Dispatch::Ready)
+            .is_none());
+        b.tick(None, 720_002, Dispatch::Ready);
         assert!(b.segments.is_empty());
+    }
+
+    #[test]
+    fn quiet_request_with_stale_signals_has_no_old_turn_context_and_displays_for_eight_seconds() {
+        let mut b = Banter::new("test".into(), true);
+        progress(&mut b, Agent::Codex, "old", "a", "以前的测试", 0);
+        let work =
+            target(Agent::Codex, "one").map(|target| (target, QuietActivity::AwaitingUpdate));
+        b.tick(work.clone(), 0, Dispatch::Ready);
+        assert!(b.tick(work.clone(), 119_999, Dispatch::Ready).is_none());
+        assert!(b.tick(work.clone(), 120_000, Dispatch::Observe).is_none());
+        assert!(b.snapshot().text.is_none());
+        let request = b.tick(work.clone(), 120_000, Dispatch::Ready).unwrap();
+        assert!(matches!(
+            &request.entries[..],
+            [Entry::Quiet {
+                activity: QuietActivity::AwaitingUpdate,
+                recent_progress: None,
+                previous_line: None
+            }]
+        ));
+        assert!(b.tick(work.clone(), 120_001, Dispatch::Ready).is_none());
+        assert!(b.finish(request.id, Some("我陪你等消息呀。".into()), 120_010));
+        assert_eq!(b.snapshot().text.as_deref(), Some("我陪你等消息呀。"));
+        assert_eq!(b.snapshot().expires_at_ms, Some(128_010));
+        b.tick(work.clone(), 128_010, Dispatch::Observe);
+        assert!(b.snapshot().text.is_none());
+        assert!(b.tick(work.clone(), 239_999, Dispatch::Ready).is_none());
+        let next = b.tick(work, 240_000, Dispatch::Ready).unwrap();
+        assert!(
+            matches!(&next.entries[..], [Entry::Quiet { previous_line: Some(text), .. }]
+            if text == "我陪你等消息呀。")
+        );
+        b.finish(next.id, Some("我陪你等消息呀。".into()), 240_012);
+        assert!(b.snapshot().text.is_none());
+    }
+
+    #[test]
+    fn quiet_uses_same_turn_progress_and_shares_the_interval_with_new_progress() {
+        let mut b = Banter::new("test".into(), true);
+        let work = working(Agent::ClaudeCode, "one");
+        b.tick(work.clone(), 0, Dispatch::Ready);
+        progress(&mut b, Agent::ClaudeCode, "one", "a", "测试已开始", 1_000);
+        let first = b.tick(work.clone(), 1_000, Dispatch::Ready).unwrap();
+        b.finish(first.id, Some("测试开始啦。".into()), 1_001);
+        progress(&mut b, Agent::ClaudeCode, "one", "a", "重复消息", 119_000);
+        assert!(b.tick(work.clone(), 120_999, Dispatch::Ready).is_none());
+        let quiet = b.tick(work.clone(), 121_000, Dispatch::Ready).unwrap();
+        assert!(matches!(&quiet.entries[..], [Entry::Quiet {
+            activity: QuietActivity::Working, recent_progress: Some(text), ..
+        }] if text == "测试已开始"));
+        progress(&mut b, Agent::ClaudeCode, "one", "b", "测试已结束", 121_010);
+        b.finish(quiet.id, Some("现在还在跑测试呢。".into()), 121_020);
+        assert!(b.snapshot().text.is_none());
+        assert!(b.tick(work.clone(), 150_999, Dispatch::Ready).is_none());
+        let next = b.tick(work, 151_000, Dispatch::Ready).unwrap();
+        assert!(
+            matches!(&next.entries[..], [Entry::Progress(a), Entry::Summary(_), Entry::Progress(b)]
+            if a == "测试已开始" && b == "测试已结束")
+        );
+    }
+
+    #[test]
+    fn quiet_result_uses_local_fallback_only_if_it_still_matches_current_work() {
+        let mut b = Banter::new("test".into(), true);
+        let work = working(Agent::Codex, "one");
+        b.tick(work.clone(), 0, Dispatch::Ready);
+        let failed = b.tick(work.clone(), 120_000, Dispatch::Ready).unwrap();
+        b.finish(failed.id, None, 120_010);
+        assert_eq!(b.snapshot().text.as_deref(), Some(QUIET_FALLBACK));
+        let next = b.tick(work.clone(), 240_000, Dispatch::Ready).unwrap();
+        let stale =
+            target(Agent::Codex, "one").map(|target| (target, QuietActivity::AwaitingUpdate));
+        b.tick(stale.clone(), 240_001, Dispatch::Observe);
+        b.finish(next.id, Some("现在还在跑测试呢。".into()), 240_002);
+        assert!(b.snapshot().text.is_none());
+        let interrupted = b.tick(stale, 360_000, Dispatch::Ready).unwrap();
+        b.tick(None, 360_001, Dispatch::Observe);
+        b.finish(interrupted.id, None, 360_002);
+        assert!(b.snapshot().text.is_none());
     }
 
     #[test]
@@ -630,7 +833,9 @@ mod tests {
                 index as u64,
             );
         }
-        let result = b.tick(target(Agent::Codex, "one"), 5, true).unwrap();
+        let result = b
+            .tick(working(Agent::Codex, "one"), 5, Dispatch::Ready)
+            .unwrap();
         assert_eq!(result.entries.len(), 3);
         assert!(matches!(&result.entries[0], Entry::Progress(s) if s.starts_with('乙')));
         assert!(matches!(&result.entries[2], Entry::Progress(s) if s.starts_with('丁')));

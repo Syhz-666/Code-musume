@@ -4,12 +4,12 @@ use crate::{
     claude_progress::Transcript,
 };
 use code_musume_contracts::{
-    Agent, BanterConfig, BanterKind, BanterProjection, BanterStatus, BanterUsage, EnvelopeV2,
-    VisibleProgress,
+    Agent, BanterConfig, BanterKind, BanterProjection, BanterStatus, BanterUsage, Certainty,
+    DisplayState, EnvelopeV2, VisibleProgress,
 };
 use code_musume_core::{
     adapter::{normalize, Kind},
-    banter::{Banter, CompletionGate, Entry, Target},
+    banter::{Banter, CompletionGate, Dispatch, Entry, QuietActivity, Target},
     Engine,
 };
 use code_musume_hook::runtime::{atomic_write, config_dir};
@@ -313,16 +313,28 @@ impl Service {
                 self.progress(self.generation, engine, message, now);
             }
         }
-        let target = (!preview)
+        let snapshot = engine.snapshot();
+        let observed = snapshot.certainty == Certainty::Observed;
+        let activity = if !observed {
+            QuietActivity::AwaitingUpdate
+        } else if snapshot.state == DisplayState::Working {
+            QuietActivity::Working
+        } else {
+            QuietActivity::Thinking
+        };
+        let work = (!preview)
             .then(|| engine.banter_target())
             .flatten()
-            .map(|(a, s, t)| Target(a, s.into(), t.into()));
-        let can_request = dispatch
-            && engine.snapshot().certainty == code_musume_contracts::Certainty::Observed
-            && self.client.is_some()
-            && self.has_key
-            && !self.auth_failed
-            && now >= self.cooldown;
+            .map(|(a, s, t)| (Target(a, s.into(), t.into()), activity));
+        let ready =
+            self.client.is_some() && self.has_key && !self.auth_failed && now >= self.cooldown;
+        let dispatch = if !dispatch {
+            Dispatch::Observe
+        } else if ready {
+            Dispatch::Ready
+        } else {
+            Dispatch::Unavailable
+        };
         let gate = self
             .core
             .completion_target()
@@ -334,18 +346,25 @@ impl Service {
                 }
             });
         let shown = self.core.completion_shown;
-        let (completion, abort) = self.core.tick_completion(gate, now, can_request);
+        let (completion, abort) =
+            self.core
+                .tick_completion(gate, now, observed && dispatch == Dispatch::Ready);
         if abort {
             self.abort_task();
         }
         if self.core.completion_shown != shown {
             self.outcome = "完成小结已显示".into();
         }
-        let progress = self.core.tick(target, now, can_request);
+        let progress = self.core.tick(work, now, dispatch);
         if let Some(request) = completion.or(progress) {
             match self.key_for(&self.config) {
                 Ok(key) => {
-                    self.outcome = "正在请求总结".into();
+                    self.outcome = if self.core.quiet_activity(request.id).is_some() {
+                        "正在生成陪伴短句"
+                    } else {
+                        "正在请求总结"
+                    }
+                    .into();
                     let client = self.client.clone().unwrap();
                     let config = self.config.clone();
                     let outcomes = self.outcomes.clone();
@@ -364,9 +383,12 @@ impl Service {
         }
         self.core.snapshot()
     }
-    pub fn finish(&mut self, id: u64, result: Outcome, now: u64, observed: bool) {
+    pub fn finish(&mut self, id: u64, result: Outcome, now: u64, certainty: Certainty) {
         let before = self.core.snapshot().revision;
-        let text = observed
+        let quiet = self.core.quiet_activity(id);
+        let usable = certainty == Certainty::Observed
+            || (certainty == Certainty::Stale && quiet == Some(QuietActivity::AwaitingUpdate));
+        let text = usable
             .then(|| result.as_ref().ok().and_then(|(text, _)| text.clone()))
             .flatten();
         if !self.core.finish(id, text, now) {
@@ -375,7 +397,13 @@ impl Service {
         self.task = None;
         match result {
             Ok((text, usage)) => {
-                self.outcome = if self.core.snapshot().revision != before {
+                self.outcome = if quiet.is_some() && self.core.snapshot().revision != before {
+                    if text.is_some() {
+                        "陪伴短句已显示"
+                    } else {
+                        "无合格的陪伴短句，已显示本地提示"
+                    }
+                } else if self.core.snapshot().revision != before {
                     "总结成功"
                 } else if self.core.completion_phase == "ready" {
                     "完成小结已生成"

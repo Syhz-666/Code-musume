@@ -90,7 +90,7 @@ export function BanterSettings() {
     <section className="panel" data-testid="banter-settings">
       <h2>工作碎碎念</h2>
       <p>
-        开启后，会把选取的工作进度、最终回复和昵称发送给所填服务。每轮结束可能额外发起一次小结请求。回复可能包含代码或私人信息。
+        开启后，会把选取的工作进度、最终回复、工作状态和昵称发送给所填服务。工作中两分钟没有新进展时，可能请模型生成陪伴短句。每轮结束可能额外请求一次小结。回复可能包含代码或私人信息。
       </p>
       <fieldset disabled={busy} className="banter-fields">
         <label>
