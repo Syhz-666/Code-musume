@@ -3,14 +3,14 @@ use sha2::{Digest, Sha256};
 
 pub struct Credentials {
     mode: String,
-    #[cfg(feature = "e2e")]
+    #[cfg(any(test, feature = "e2e"))]
     test_keys: std::collections::BTreeMap<String, String>,
 }
 impl Credentials {
     pub fn new(mode: &str) -> Self {
         Self {
             mode: mode.into(),
-            #[cfg(feature = "e2e")]
+            #[cfg(any(test, feature = "e2e"))]
             test_keys: Default::default(),
         }
     }
@@ -26,14 +26,14 @@ impl Credentials {
     }
     pub fn read(&self, c: &BanterConfig) -> Result<Option<String>, String> {
         let target = self.target(c);
-        #[cfg(feature = "e2e")]
+        #[cfg(any(test, feature = "e2e"))]
         return Ok(self.test_keys.get(&target).cloned());
-        #[cfg(not(feature = "e2e"))]
+        #[cfg(not(any(test, feature = "e2e")))]
         system::read(&target)
     }
     pub fn store(&mut self, c: &BanterConfig, value: Option<&str>) -> Result<(), String> {
         let target = self.target(c);
-        #[cfg(feature = "e2e")]
+        #[cfg(any(test, feature = "e2e"))]
         {
             if let Some(value) = value {
                 self.test_keys.insert(target, value.into());
@@ -42,12 +42,12 @@ impl Credentials {
             }
             Ok(())
         }
-        #[cfg(not(feature = "e2e"))]
+        #[cfg(not(any(test, feature = "e2e")))]
         system::store(&target, value)
     }
 }
 
-#[cfg(all(windows, not(feature = "e2e")))]
+#[cfg(all(windows, not(any(test, feature = "e2e"))))]
 mod system {
     use std::{io, ptr, slice};
     use windows_sys::Win32::Security::Credentials::*;
@@ -111,7 +111,7 @@ mod system {
     }
 }
 
-#[cfg(all(not(windows), not(feature = "e2e")))]
+#[cfg(all(not(windows), not(any(test, feature = "e2e"))))]
 mod system {
     pub fn read(_: &str) -> Result<Option<String>, String> {
         Ok(None)

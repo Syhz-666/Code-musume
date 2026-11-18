@@ -114,6 +114,7 @@ async function check(name) {
     assert.equal(config.state, undefined);
     const banterConfig = JSON.parse(readFileSync(join(directory, "config/banter.json"), "utf8"));
     assert.equal(banterConfig.enabled, false);
+    assert.equal(banterConfig.idleEnabled, false);
     assert.equal(banterConfig.nickname, "小蓝");
     assert.equal(banterConfig.model, "mock-model");
     assert.equal(banterConfig.key, undefined);

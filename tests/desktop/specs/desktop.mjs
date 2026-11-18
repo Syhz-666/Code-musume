@@ -300,6 +300,8 @@ describe("Actual desktop event chain and settings", () => {
   });
   it("rolls for idle chatter, rests, wakes, and yields to work in both renderers", async function () {
     this.timeout(150_000);
+    const status = () => nativeInvoke("get_banter_status");
+    const { config: previousConfig } = await status();
     const requests = [];
     let releaseLate;
     const mock = createServer(async (req, res) => {
@@ -318,19 +320,16 @@ describe("Actual desktop event chain and settings", () => {
       else complete("想靠一会儿。");
     });
     await new Promise((resolve) => mock.listen(0, "127.0.0.1", resolve));
-    const status = () => nativeInvoke("get_banter_status");
+    const mockConfig = {
+      baseUrl: `http://127.0.0.1:${mock.address().port}/v1`,
+      model: "idle-mock",
+    };
     const idle = async () => (await nativeInvoke("get_pipeline_diagnostics")).banterIdle;
     const advance = (ms) => nativeInvoke("e2e_advance_clock", { ms });
     try {
       await nativeInvoke("e2e_set_clock_paused", { paused: true });
-      const { config } = await status();
       await nativeInvoke("save_banter", {
-        config: {
-          ...config,
-          enabled: false,
-          baseUrl: `http://127.0.0.1:${mock.address().port}/v1`,
-          model: "idle-mock",
-        },
+        config: mockConfig,
         key: "synthetic-key",
         deleteKey: false,
       });
@@ -393,12 +392,23 @@ describe("Actual desktop event chain and settings", () => {
         assert.equal((await idle()).lastSkip, "interrupted");
       }
     } finally {
-      await selectWindow("settings");
-      const { config } = await status();
-      await nativeInvoke("save_banter", { config, key: null, deleteKey: true });
-      await nativeInvoke("e2e_set_clock_paused", { paused: false });
-      mock.closeAllConnections();
-      await new Promise((resolve) => mock.close(resolve));
+      try {
+        await selectWindow("settings");
+        const { config } = await status();
+        if (config.baseUrl === mockConfig.baseUrl) {
+          await nativeInvoke("save_banter", { config, key: null, deleteKey: true });
+        }
+        const restored = await nativeInvoke("save_banter", {
+          config: previousConfig,
+          key: null,
+          deleteKey: false,
+        });
+        assert.deepEqual(restored.config, previousConfig);
+      } finally {
+        mock.closeAllConnections();
+        await new Promise((resolve) => mock.close(resolve));
+        await nativeInvoke("e2e_set_clock_paused", { paused: false });
+      }
     }
   });
   it("plays the approved idle atlas across rows and loops, including manual preview and reduced motion", async () => {

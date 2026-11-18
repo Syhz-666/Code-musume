@@ -30,12 +30,14 @@ pub fn validate(c: &mut BanterConfig) -> Result<(), String> {
 
 pub fn endpoint(c: &BanterConfig) -> Result<Url, String> {
     let base = Url::parse(&c.base_url).map_err(|_| "请输入 API 基础地址")?;
-    let test_loopback = cfg!(any(test, feature = "e2e"))
-        && base.scheme() == "http"
-        && base.host_str() == Some("127.0.0.1");
-    if (base.scheme() != "https" && !test_loopback)
-        || base.host().is_none()
-        || !base.username().is_empty()
+    if cfg!(any(test, feature = "e2e")) {
+        if base.scheme() != "http" || base.host_str() != Some("127.0.0.1") {
+            return Err("测试只允许使用 127.0.0.1 上的 HTTP 模拟接口".into());
+        }
+    } else if base.scheme() != "https" || base.host().is_none() {
+        return Err("请填写 HTTPS 基础地址，保留版本前缀，例如 /v1".into());
+    }
+    if !base.username().is_empty()
         || base.password().is_some()
         || base.query().is_some()
         || base.fragment().is_some()
@@ -146,12 +148,13 @@ impl Failure {
 }
 
 pub fn client() -> Result<Client, String> {
-    Client::builder()
+    let builder = Client::builder()
         .timeout(Duration::from_secs(20))
         .redirect(reqwest::redirect::Policy::none())
-        .retry(reqwest::retry::never())
-        .build()
-        .map_err(|_| "无法初始化总结服务".into())
+        .retry(reqwest::retry::never());
+    #[cfg(any(test, feature = "e2e"))]
+    let builder = builder.no_proxy();
+    builder.build().map_err(|_| "无法初始化总结服务".into())
 }
 
 pub async fn summarize(
@@ -462,44 +465,23 @@ mod tests {
         server.abort();
     }
 
-    #[cfg(all(windows, not(feature = "e2e")))]
-    #[tokio::test]
-    #[ignore = "手动调用已配置的模型，最多 8 次请求"]
-    async fn review_configured_idle_voice() {
-        use crate::banter_credentials::Credentials;
-        use code_musume_hook::runtime::config_dir;
-        let mut config: BanterConfig = serde_json::from_slice(
-            &std::fs::read(config_dir().join("banter.json")).expect("未找到碎碎念配置"),
-        )
-        .expect("碎碎念配置无法解析");
-        config.idle_enabled = true;
-        validate(&mut config).unwrap();
-        let key = [crate::mode(), "release", "dev"]
-            .into_iter()
-            .find_map(|mode| Credentials::new(mode).read(&config).ok().flatten())
-            .expect("Windows 凭据管理器未提供此服务的密钥");
-        let http = client().unwrap();
-        let mut recent = Vec::new();
-        for _ in 0..8 {
-            let (text, _) = summarize(
-                &http,
-                &config,
-                &key,
-                &[Entry::Idle {
-                    recent: recent.clone(),
-                }],
-            )
-            .await
-            .unwrap_or_else(|failure| panic!("{}", failure.label()));
-            if let Some(text) = text.filter(|text| !recent.contains(text)) {
-                println!("{text}");
-                recent.push(text);
-                if recent.len() > 3 {
-                    recent.remove(0);
-                }
-            } else {
-                println!("本次没有合格的新台词");
-            }
+    #[test]
+    fn test_build_only_accepts_local_http_mocks() {
+        for invalid in [
+            "https://api.example.invalid/v1",
+            "http://api.example.invalid/v1",
+            "http://127.0.0.1.example.invalid/v1",
+        ] {
+            let config = BanterConfig {
+                base_url: invalid.into(),
+                ..Default::default()
+            };
+            assert!(endpoint(&config).is_err(), "accepted {invalid}");
         }
+        let config = BanterConfig {
+            base_url: "http://127.0.0.1:12345/v1".into(),
+            ..Default::default()
+        };
+        assert_eq!(endpoint(&config).unwrap().path(), "/v1/chat/completions");
     }
 }
