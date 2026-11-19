@@ -536,7 +536,7 @@ impl Native {
                         .is_some_and(|window| window.is_visible().unwrap_or(false));
                 banter.reconcile_idle(&engine, preview || hidden, now);
                 if let Some((id, result)) = outcome {
-                    banter.finish(id, result, now, engine.snapshot().certainty, window_visible);
+                    banter.finish(id, result, now, &engine, window_visible);
                 }
                 let banter_view = banter.refresh(
                     &engine,

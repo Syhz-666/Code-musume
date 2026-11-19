@@ -1,6 +1,6 @@
 use crate::{
     adapter::{normalize, short_hash, CanonicalEvent, Kind},
-    banter::{CompletionGate, Target},
+    banter::{CompletionGate, QuietActivity, Target},
 };
 use code_musume_contracts::*;
 use std::collections::{BTreeMap, VecDeque};
@@ -228,6 +228,7 @@ impl Session {
 
 pub struct Engine {
     completed_turn: Option<Target>,
+    completion_superseded: bool,
     sessions: BTreeMap<SessionKey, Session>,
     seen: VecDeque<String>,
     dominant: Option<SessionKey>,
@@ -246,6 +247,7 @@ impl Engine {
     pub fn new(instance_id: String, config: Config) -> Self {
         Self {
             completed_turn: None,
+            completion_superseded: false,
             sessions: BTreeMap::new(),
             seen: VecDeque::new(),
             dominant: None,
@@ -319,50 +321,70 @@ impl Engine {
         let Some(session) = self.sessions.get(&key).filter(|s| !s.ended) else {
             return CompletionGate::Blocked;
         };
-        if session.hook_loss.is_some()
+        if self.completion_superseded
+            || session.hook_loss.is_some()
             || session.ambiguous
             || !session
                 .actors
                 .get("@main")
                 .is_some_and(|a| a.closed_turns.contains(&target.2))
             || self.sessions.values().filter(|s| !s.ended).any(|s| {
-                let (_, certainty, _) = s.view(now);
                 s.pending() > 0
                     || s.notices.iter().any(|n| {
                         n.until > now
                             && (n.state != DisplayState::Done || !std::ptr::eq(s, session))
                     })
-                    || certainty != Certainty::Unknown && s.has_active_work()
             })
         {
             return CompletionGate::Blocked;
         }
         match self.projection.state {
             DisplayState::Done if self.dominant.as_ref() == Some(&key) => CompletionGate::Waiting,
-            DisplayState::Idle if self.projection.bubble_key.is_none() => CompletionGate::Idle,
+            DisplayState::Idle | DisplayState::Working | DisplayState::Thinking
+                if self.projection.bubble_key.is_none() =>
+            {
+                CompletionGate::Available
+            }
             _ => CompletionGate::Blocked,
         }
     }
     pub fn tracked_sessions(&self) -> impl Iterator<Item = &(Agent, String)> {
         self.sessions.keys()
     }
-    pub fn banter_target(&self) -> Option<(Agent, &str, &str)> {
-        let (agent, id) = self.dominant.as_ref()?;
-        if self.projection.certainty == Certainty::Unknown
-            || self
-                .sessions
-                .get(&(*agent, id.clone()))?
-                .hook_loss
-                .is_some()
-            || !matches!(
-                self.projection.state,
-                DisplayState::Working | DisplayState::Thinking
-            )
-            || self.projection.bubble_key.is_some()
-        {
+    pub fn banter_work(
+        &self,
+        previous: Option<&Target>,
+        now: u64,
+    ) -> Option<(Target, QuietActivity)> {
+        let covered_by_done = self.projection.state == DisplayState::Done;
+        let key = if covered_by_done {
+            // Keep the earlier work line behind the fixed completion notice.
+            let Target(agent, session, _) = previous?;
+            (*agent, session.clone())
+        } else if self.projection.bubble_key.is_none() {
+            self.dominant.clone()?
+        } else {
+            return None;
+        };
+        let session = self.sessions.get(&key)?;
+        if session.ended || session.hook_loss.is_some() {
             return None;
         }
-        Some((*agent, id, self.active_turn(*agent, id)?))
+        let actor = session.actors.get("@main").filter(|actor| actor.active)?;
+        let target = Target(key.0, key.1, actor.turn.clone()?);
+        if covered_by_done && previous != Some(&target) {
+            return None;
+        }
+        let (state, certainty, _) = session.view(now);
+        let activity = match (state, certainty) {
+            (DisplayState::Working, Certainty::Observed) => QuietActivity::Working,
+            (DisplayState::Thinking, Certainty::Observed) => QuietActivity::Thinking,
+            (DisplayState::Working | DisplayState::Thinking, Certainty::Stale) => {
+                QuietActivity::AwaitingUpdate
+            }
+            _ => return None,
+        };
+        Some((target, activity))
     }
     pub fn with_codex_approval_sync(mut self, enabled: bool) -> Self {
         self.codex_approval_sync = enabled;
@@ -464,6 +486,7 @@ impl Engine {
     pub fn reset(&mut self, now: u64) {
         self.sessions.clear();
         self.completed_turn = None;
+        self.completion_superseded = false;
         self.dominant = None;
         self.missed = 0;
         self.last_activity = now;
@@ -530,6 +553,11 @@ impl Engine {
                 let outcome = Self::apply(s, &e, now);
                 if outcome == "applied" {
                     self.last_activity = now;
+                    if e.kind == Kind::Prompt && e.actor.is_none() {
+                        self.completion_superseded = true;
+                    } else if ending.is_some() {
+                        self.completion_superseded = false;
+                    }
                     // An exact main Stop closes that turn's tools even when one result was too big.
                     if ending.is_some()
                         && s.hook_loss == Some(HookLoss::ToolResult)

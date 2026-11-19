@@ -258,6 +258,24 @@ describe("Actual desktop event chain and settings", () => {
         await nativeInvoke("reset_sessions");
         await nativeInvoke("set_config", { config: { ...initialConfig, renderer } });
         await waitForRenderer(renderer);
+        if (renderer === "dom") {
+          await nativeInvoke("e2e_advance_clock", { ms: 30_001 });
+          await hook(cc, "UserPromptSubmit", {}, "parallel-work", "parallel-turn");
+          await pet({ state: "thinking", agent: cc, renderer });
+          await nativeInvoke("e2e_banter_fixture", {
+            progress: {
+              agent: cc,
+              session: "parallel-work",
+              turn: "parallel-turn",
+              id: "parallel-progress",
+              text: "正在核对另一轮的测试。",
+              kind: "progress",
+            },
+          });
+          const progressBubble = await browser.$('.bubble[data-kind="banter"]');
+          await progressBubble.waitForDisplayed();
+          assert.equal(await progressBubble.getText(), "登录测试过啦。");
+        }
         await hook(cx, "UserPromptSubmit", {}, session, "final-turn");
         await pet({ state: "thinking", renderer });
         await browser.waitUntil(() => peer.following(session));
@@ -283,14 +301,25 @@ describe("Actual desktop event chain and settings", () => {
           async () =>
             (await nativeInvoke("get_pipeline_diagnostics")).banterCompletion.phase === "ready",
         );
-        assert.equal((await nativeInvoke("get_banter_projection")).text, null);
+        const previousBubble = await nativeInvoke("get_banter_projection");
+        assert.equal(previousBubble.kind, renderer === "dom" ? "progress" : null);
         await nativeInvoke("e2e_advance_clock", { ms: 3000 });
-        await pet({ state: "idle", renderer });
+        if (renderer === "dom") {
+          await pet({ state: "thinking", agent: cc, renderer });
+        } else {
+          await pet({ state: "idle", renderer });
+        }
         const complete = await browser.$('.bubble[data-kind="banter"]');
         await complete.waitForDisplayed();
-        assert.equal(await complete.getText(), "登录过啦，保存还待查。");
+        await browser.waitUntil(
+          async () => (await complete.getText()) === "登录过啦，保存还待查。",
+        );
         const completionBubble = await nativeInvoke("get_banter_projection");
         assert.equal(completionBubble.kind, "completion");
+        if (renderer === "dom") {
+          const { capturedAtMs } = await nativeInvoke("get_pipeline_diagnostics");
+          assert(capturedAtMs < previousBubble.expiresAtMs);
+        }
         await browser.waitUntil(async () => {
           const { banterPipeline } = await nativeInvoke("get_pipeline_diagnostics");
           return banterPipeline.trace.entries.some(
@@ -298,7 +327,7 @@ describe("Actual desktop event chain and settings", () => {
               entry.revision === completionBubble.revision && entry.reason === "frame-submitted",
           );
         });
-        assert.equal(requests.length, 3 + index);
+        assert.equal(requests.length, 3 + 2 * index);
         assert.deepEqual(JSON.parse(requests.at(-1).messages.at(-1).content), {
           本轮最终回复: "登录测试通过，保存设置还没验证。",
         });
@@ -317,7 +346,9 @@ describe("Actual desktop event chain and settings", () => {
         } else {
           await hook(cc, "UserPromptSubmit", {}, "next-work", "next-turn");
           await pet({ state: "thinking", agent: cc });
-          assert.equal((await nativeInvoke("get_banter_projection")).kind, null);
+          await browser.waitUntil(
+            async () => (await nativeInvoke("get_banter_projection")).kind === null,
+          );
         }
       }
       await nativeInvoke("reset_sessions");
@@ -333,7 +364,7 @@ describe("Actual desktop event chain and settings", () => {
             entry.kind === "completion" && entry.step === "turn" && entry.reason === "no-final",
         );
       });
-      assert.equal(requests.length, 4);
+      assert.equal(requests.length, 5);
 
       completionReply = "字".repeat(21);
       await nativeInvoke("reset_sessions");
@@ -358,7 +389,7 @@ describe("Actual desktop event chain and settings", () => {
       await nativeInvoke("e2e_advance_clock", { ms: 3000 });
       await pet({ state: "idle" });
       assert.equal((await nativeInvoke("get_banter_projection")).text, null);
-      assert.equal(requests.length, 5);
+      assert.equal(requests.length, 6);
     } finally {
       await peer?.close();
       await selectWindow("settings");

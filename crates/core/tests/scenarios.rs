@@ -82,7 +82,7 @@ fn idle_banter_preserves_work_and_lost_signal_and_overrides_confirmed_sleep() {
     assert_eq!(e.snapshot().state, DisplayState::Sleeping);
 }
 #[test]
-fn main_stop_is_attributed_once_and_other_work_takes_precedence() {
+fn main_stop_is_attributed_once_and_existing_parallel_work_allows_a_summary() {
     use code_musume_core::banter::{CompletionGate, Target};
     let mut e = engine();
     let cx = Agent::Codex;
@@ -94,6 +94,23 @@ fn main_stop_is_attributed_once_and_other_work_takes_precedence() {
     e.ingest(event(cx, "Stop", "codex", "old", json!({}), "b"), 1);
     assert!(e.take_completed_turn().is_none());
     e.ingest(
+        event(cc, "UserPromptSubmit", "claude", "2", json!({}), "parallel"),
+        2,
+    );
+    e.ingest(
+        event(
+            cc,
+            "PreToolUse",
+            "claude",
+            "2",
+            json!({"tool_use_id":"other-tool"}),
+            "tool",
+        ),
+        2,
+    );
+    let (work, _) = e.banter_work(None, 2).unwrap();
+    assert!(work == Target(cc, "claude".into(), "2".into()));
+    e.ingest(
         event(cx, "Stop", "codex", "1", json!({"agent_id":"worker"}), "c"),
         2,
     );
@@ -102,17 +119,20 @@ fn main_stop_is_attributed_once_and_other_work_takes_precedence() {
     let t = e.take_completed_turn().unwrap();
     assert!(t == Target(cx, "codex".into(), "1".into()));
     assert!(e.completion_gate(&t, 3) == CompletionGate::Waiting);
+    assert!(e.banter_work(Some(&work), 3).is_some());
     e.ingest(event(cx, "Stop", "codex", "1", json!({}), "repeat"), 4);
     assert!(e.take_completed_turn().is_none());
     e.tick(3003);
-    assert!(e.completion_gate(&t, 3003) == CompletionGate::Idle);
+    assert_eq!(e.snapshot().state, DisplayState::Working);
+    assert_eq!(e.snapshot().dominant_agent, Some(cc));
+    assert!(e.completion_gate(&t, 3003) == CompletionGate::Available);
     e.ingest(
-        event(cc, "UserPromptSubmit", "claude", "2", json!({}), "e"),
+        event(cc, "UserPromptSubmit", "claude", "new", json!({}), "e"),
         3004,
     );
     assert!(e.completion_gate(&t, 3004) == CompletionGate::Blocked);
     e.ingest(
-        event(cc, "StopFailure", "claude", "2", json!({}), "f"),
+        event(cc, "StopFailure", "claude", "new", json!({}), "f"),
         3005,
     );
     assert!(e.take_completed_turn().is_none());
@@ -215,7 +235,7 @@ fn matched_stop_and_final_produce_summary_after_oversized_tool_result() {
     assert!(banter.snapshot().text.is_none());
     let after_done = 5 + DONE_MS;
     e.tick(after_done);
-    assert!(e.completion_gate(&target, after_done) == CompletionGate::Idle);
+    assert!(e.completion_gate(&target, after_done) == CompletionGate::Available);
     banter.tick_completion(e.completion_gate(&target, after_done), after_done, true);
     assert_eq!(banter.snapshot().kind, Some(BanterKind::Completion));
 }

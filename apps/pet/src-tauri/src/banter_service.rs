@@ -5,8 +5,8 @@ use crate::{
     claude_progress::Transcript,
 };
 use code_musume_contracts::{
-    Agent, BanterConfig, BanterKind, BanterProjection, BanterStatus, BanterUsage, Certainty,
-    DisplayState, EnvelopeV2, VisibleProgress,
+    Agent, BanterConfig, BanterKind, BanterProjection, BanterStatus, BanterUsage, DisplayState,
+    EnvelopeV2, VisibleProgress,
 };
 use code_musume_core::{
     adapter::{normalize, Kind},
@@ -450,25 +450,17 @@ impl Service {
             }
         }
         let snapshot = engine.snapshot();
-        let observed = snapshot.certainty == Certainty::Observed;
-        let activity = if !observed {
-            QuietActivity::AwaitingUpdate
-        } else if snapshot.state == DisplayState::Working {
-            QuietActivity::Working
-        } else {
-            QuietActivity::Thinking
-        };
         let work = (!preview)
-            .then(|| engine.banter_target())
-            .flatten()
-            .map(|(a, s, t)| (Target(a, s.into(), t.into()), activity));
+            .then(|| engine.banter_work(self.core.work_target(), now))
+            .flatten();
+        let covered_by_done = snapshot.state == DisplayState::Done;
         self.work_gate = if !self.config.enabled {
             "disabled"
         } else if preview {
             "manual-preview"
-        } else if work.is_none() {
+        } else if covered_by_done || work.is_none() {
             "no-eligible-work-target"
-        } else if !observed {
+        } else if matches!(work, Some((_, QuietActivity::AwaitingUpdate))) {
             "awaiting-fresh-work-signal"
         } else {
             "eligible"
@@ -493,9 +485,9 @@ impl Service {
             });
         let before = self.core.snapshot().revision;
         let phase = self.core.completion_phase;
-        let (completion, abort) =
-            self.core
-                .tick_completion(gate, now, observed && dispatch == Dispatch::Ready);
+        let (completion, abort) = self
+            .core
+            .tick_completion(gate, now, dispatch == Dispatch::Ready);
         if abort {
             self.abort_task(now);
         }
@@ -509,7 +501,12 @@ impl Service {
         if phase != "shown" && self.core.completion_phase == "shown" {
             self.outcome = "完成小结已显示".into();
         }
-        let progress = self.core.tick(work, now, dispatch);
+        let work_dispatch = if covered_by_done {
+            Dispatch::Observe
+        } else {
+            dispatch
+        };
+        let progress = self.core.tick(work, now, work_dispatch);
         let request = completion.or(progress).or_else(|| {
             let idle_dispatch = if !idle_provider_available? && dispatch == Dispatch::Ready {
                 Dispatch::Unavailable
@@ -585,17 +582,24 @@ impl Service {
         id: u64,
         result: Outcome,
         now: u64,
-        certainty: Certainty,
+        engine: &Engine,
         window_visible: bool,
     ) {
         let before = self.core.snapshot().revision;
         let quiet = self.core.quiet_activity(id);
         let idle = self.core.has_idle_request();
-        let usable = if idle {
-            window_visible
-        } else {
-            certainty == Certainty::Observed
-                || (certainty == Certainty::Stale && quiet == Some(QuietActivity::AwaitingUpdate))
+        let usable = match self.core.request_context() {
+            Some((current, "completion", Some(target))) if current == id => {
+                engine.completion_gate(target, now) != CompletionGate::Blocked
+            }
+            Some((current, "idle", _)) if current == id => window_visible,
+            Some((current, _, Some(target))) if current == id => engine
+                .banter_work(self.core.work_target(), now)
+                .is_some_and(|(work, activity)| {
+                    &work == target
+                        && (activity != QuietActivity::AwaitingUpdate || quiet == Some(activity))
+                }),
+            _ => false,
         };
         let text = usable
             .then(|| {

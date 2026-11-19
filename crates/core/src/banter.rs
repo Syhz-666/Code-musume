@@ -23,7 +23,7 @@ pub struct Target(pub Agent, pub String, pub String);
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum CompletionGate {
     Waiting,
-    Idle,
+    Available,
     Blocked,
 }
 
@@ -255,6 +255,9 @@ impl Banter {
     pub fn snapshot(&self) -> BanterProjection {
         self.view.clone()
     }
+    pub fn work_target(&self) -> Option<&Target> {
+        self.target.as_ref()
+    }
     pub fn retain(&mut self, keep: impl Fn(&(Agent, String)) -> bool) {
         self.segments.retain(|key, _| keep(key));
         self.finals.retain(|key, _| keep(key));
@@ -424,7 +427,7 @@ impl Banter {
         if now >= c.ended_at + COMPLETION_DEADLINE {
             return (None, self.cancel_completion("deadline"));
         }
-        if gate == CompletionGate::Idle && now >= c.ended_at + crate::engine::DONE_MS {
+        if gate == CompletionGate::Available && now >= c.ended_at + crate::engine::DONE_MS {
             if let Some(text) = c.result.take() {
                 let target = c.target.clone();
                 c.shown = true;
@@ -495,6 +498,13 @@ impl Banter {
             if let RequestKind::Quiet(start_activity) = flight.kind {
                 flight.eligible &= activity == Some(start_activity);
             }
+            return None;
+        }
+        if self
+            .completion
+            .as_ref()
+            .is_some_and(|completion| completion.shown || completion.result.is_some())
+        {
             return None;
         }
         let target = self.target.clone()?;
@@ -872,15 +882,58 @@ mod tests {
             b.finish(complete.id, Some("登录过啦，保存还待查。".into()), 130),
             Some("ready")
         );
-        b.tick_completion(CompletionGate::Idle, 3099, true);
+        b.tick_completion(CompletionGate::Available, 3099, true);
         assert!(b.snapshot().text.is_none());
-        b.tick_completion(CompletionGate::Idle, 3100, true);
+        b.tick_completion(CompletionGate::Available, 3100, true);
         assert_eq!(b.snapshot().kind, Some(BanterKind::Completion));
         assert_eq!(b.snapshot().expires_at_ms, Some(11100));
-        b.tick_completion(CompletionGate::Idle, 11100, true);
+        b.tick_completion(CompletionGate::Available, 11100, true);
         assert!(b.snapshot().text.is_none());
         assert_eq!(b.completion_requests, 1);
         assert_eq!(b.completion_shown, 1);
+    }
+
+    #[test]
+    fn completion_waits_for_the_request_slot_but_replaces_the_work_bubble() {
+        let mut b = Banter::new("test".into(), true);
+        let parallel = working(Agent::ClaudeCode, "parallel");
+        progress(&mut b, Agent::ClaudeCode, "parallel", "draft", "跑测试", 0);
+        let work = b.tick(parallel.clone(), 0, Dispatch::Ready).unwrap();
+        final_text(&mut b, "finished", 90);
+        assert!(!b.completed(target(Agent::Codex, "finished").unwrap(), 100));
+        assert!(b
+            .tick_completion(CompletionGate::Waiting, 100, true)
+            .0
+            .is_none());
+        assert!(b
+            .tick_completion(CompletionGate::Available, 3100, true)
+            .0
+            .is_none());
+
+        assert_eq!(
+            b.finish(work.id, Some("测试还在跑。".into()), 3500),
+            Some("published")
+        );
+        let progress_view = b.snapshot();
+        assert_eq!(progress_view.kind, Some(BanterKind::Progress));
+        let completion = b
+            .tick_completion(CompletionGate::Available, 3500, true)
+            .0
+            .unwrap();
+        assert_eq!(
+            b.finish(completion.id, Some("登录过啦。".into()), 3800),
+            Some("ready")
+        );
+        assert_eq!(b.snapshot().revision, progress_view.revision);
+        assert!(3800 < progress_view.expires_at_ms.unwrap());
+        b.tick_completion(CompletionGate::Available, 3800, true);
+        let published = b.snapshot();
+        assert_eq!(published.kind, Some(BanterKind::Completion));
+        assert_eq!(published.agent, Some(Agent::Codex));
+        assert_eq!(published.expires_at_ms, Some(11_800));
+        assert!(b.tick(parallel, 3800, Dispatch::Ready).is_none());
+        b.tick_completion(CompletionGate::Available, 11_800, true);
+        assert!(b.snapshot().text.is_none());
     }
 
     #[test]
@@ -897,11 +950,11 @@ mod tests {
         b.completed(t.clone(), 3000);
         final_text(&mut b, "one", 4500);
         assert!(b
-            .tick_completion(CompletionGate::Idle, 6000, false)
+            .tick_completion(CompletionGate::Available, 6000, false)
             .0
             .is_none());
         let request = b
-            .tick_completion(CompletionGate::Idle, 6100, true)
+            .tick_completion(CompletionGate::Available, 6100, true)
             .0
             .unwrap();
         assert!(b.tick_completion(CompletionGate::Blocked, 6200, true).1);
@@ -918,7 +971,7 @@ mod tests {
         b.finish(request.id, None, 7001);
         assert_eq!(b.completion_phase, "no-summary");
         assert!(b
-            .tick_completion(CompletionGate::Idle, 10000, true)
+            .tick_completion(CompletionGate::Available, 10000, true)
             .0
             .is_none());
 
@@ -928,7 +981,7 @@ mod tests {
             .tick_completion(CompletionGate::Waiting, 11000, true)
             .0
             .unwrap();
-        assert!(b.tick_completion(CompletionGate::Idle, 31000, true).1);
+        assert!(b.tick_completion(CompletionGate::Available, 31000, true).1);
         assert!(b
             .finish(request.id, Some("已经迟到了。".into()), 31001)
             .is_none());
