@@ -72,6 +72,11 @@ struct Notice {
     until: u64,
     key: String,
 }
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HookLoss {
+    ToolResult,
+    Unknown,
+}
 #[derive(Debug, Clone)]
 struct Session {
     actors: BTreeMap<String, Actor>,
@@ -81,7 +86,7 @@ struct Session {
     ambiguous: bool,
     background: usize,
     background_last: u64,
-    degraded: bool,
+    hook_loss: Option<HookLoss>,
     codex_approvals: Option<(CodexApprovals, u64)>,
     /// The desktop once reported this session and then stopped; hook evidence is a fallback.
     approval_degraded: bool,
@@ -102,10 +107,17 @@ impl Session {
             ambiguous: false,
             background: 0,
             background_last: now,
-            degraded: false,
+            hook_loss: None,
             codex_approvals: None,
             approval_degraded: false,
         }
+    }
+    fn has_active_work(&self) -> bool {
+        self.background > 0
+            || self.codex_approvals.is_some_and(|a| a.0.automatic > 0)
+            || self.actors.values().any(|actor| {
+                actor.active || actor.compacting || actor.tools.values().any(|tool| !tool.terminal)
+            })
     }
     // Hook requests and a desktop snapshot describe the same approvals. While a snapshot
     // exists it is authoritative; hook requests stay recorded so they can take over on loss.
@@ -130,7 +142,7 @@ impl Session {
                 DisplayState::WaitingPermission,
                 if now.saturating_sub(since) >= SLEEP_MS
                     || self.ambiguous
-                    || self.degraded
+                    || self.hook_loss.is_some()
                     || self.approval_degraded
                 {
                     Certainty::Stale
@@ -148,7 +160,7 @@ impl Session {
         {
             return (
                 n.state,
-                if self.degraded {
+                if self.hook_loss.is_some() {
                     Certainty::Stale
                 } else {
                     Certainty::Observed
@@ -197,7 +209,7 @@ impl Session {
             state == DisplayState::Idle && (!work_times.is_empty() || !think_times.is_empty());
         let certainty = if self.ambiguous || expired_activity {
             Certainty::Unknown
-        } else if self.degraded || state != DisplayState::Idle && elapsed >= FADE_MS {
+        } else if self.hook_loss.is_some() || state != DisplayState::Idle && elapsed >= FADE_MS {
             Certainty::Stale
         } else {
             Certainty::Observed
@@ -307,7 +319,7 @@ impl Engine {
         let Some(session) = self.sessions.get(&key).filter(|s| !s.ended) else {
             return CompletionGate::Blocked;
         };
-        if session.degraded
+        if session.hook_loss.is_some()
             || session.ambiguous
             || !session
                 .actors
@@ -320,14 +332,7 @@ impl Engine {
                         n.until > now
                             && (n.state != DisplayState::Done || !std::ptr::eq(s, session))
                     })
-                    || certainty != Certainty::Unknown
-                        && (s.background > 0
-                            || s.codex_approvals.is_some_and(|a| a.0.automatic > 0)
-                            || s.actors.values().any(|actor| {
-                                actor.active
-                                    || actor.compacting
-                                    || actor.tools.values().any(|tool| !tool.terminal)
-                            }))
+                    || certainty != Certainty::Unknown && s.has_active_work()
             })
         {
             return CompletionGate::Blocked;
@@ -344,7 +349,11 @@ impl Engine {
     pub fn banter_target(&self) -> Option<(Agent, &str, &str)> {
         let (agent, id) = self.dominant.as_ref()?;
         if self.projection.certainty == Certainty::Unknown
-            || self.sessions.get(&(*agent, id.clone()))?.degraded
+            || self
+                .sessions
+                .get(&(*agent, id.clone()))?
+                .hook_loss
+                .is_some()
             || !matches!(
                 self.projection.state,
                 DisplayState::Working | DisplayState::Thinking
@@ -447,7 +456,7 @@ impl Engine {
     pub fn lost(&mut self, count: u64, now: u64) {
         self.missed = self.missed.saturating_add(count);
         for session in self.sessions.values_mut() {
-            session.degraded = true;
+            session.hook_loss = Some(HookLoss::Unknown);
         }
         self.log(None, "transport", None, "events-lost");
         self.tick(now);
@@ -487,7 +496,7 @@ impl Engine {
                         self.sessions.remove(&k);
                     } else {
                         for session in self.sessions.values_mut() {
-                            session.degraded = true;
+                            session.hook_loss = Some(HookLoss::Unknown);
                         }
                         self.log(
                             Some(e.agent),
@@ -507,7 +516,7 @@ impl Engine {
                 let ending = (envelope.event == "Stop"
                     && e.kind == Kind::Done
                     && e.actor.is_none()
-                    && !s.degraded
+                    && s.hook_loss != Some(HookLoss::Unknown)
                     && !s.ambiguous)
                     .then(|| {
                         s.actors
@@ -521,6 +530,14 @@ impl Engine {
                 let outcome = Self::apply(s, &e, now);
                 if outcome == "applied" {
                     self.last_activity = now;
+                    // An exact main Stop closes that turn's tools even when one result was too big.
+                    if ending.is_some()
+                        && s.hook_loss == Some(HookLoss::ToolResult)
+                        && !s.has_active_work()
+                        && s.pending() == 0
+                    {
+                        s.hook_loss = None;
+                    }
                     self.completed_turn =
                         ending.map(|turn| Target(e.agent, e.session.clone(), turn));
                 }
@@ -534,10 +551,34 @@ impl Engine {
             ),
             Err(reason) => {
                 self.missed += 1;
-                for session in self.sessions.values_mut() {
-                    session.degraded = true;
-                }
-                self.log(Some(envelope.agent), &envelope.event, None, reason);
+                let outcome = if reason == "invalid-payload"
+                    && envelope.event == "PostToolUse"
+                    && envelope
+                        .parse_error
+                        .as_ref()
+                        .is_some_and(|e| e.kind == "size")
+                {
+                    // The truncated body cannot identify a session, but the relay knows the source
+                    // and event name. A lost tool result cannot open a different turn.
+                    for ((agent, _), session) in &mut self.sessions {
+                        if *agent == envelope.agent
+                            && session.hook_loss.is_none()
+                            && session.actors.values().any(|actor| {
+                                !actor.pending.is_empty()
+                                    || actor.tools.values().any(|tool| !tool.terminal)
+                            })
+                        {
+                            session.hook_loss = Some(HookLoss::ToolResult);
+                        }
+                    }
+                    "oversized-tool-result"
+                } else {
+                    for session in self.sessions.values_mut() {
+                        session.hook_loss = Some(HookLoss::Unknown);
+                    }
+                    reason
+                };
+                self.log(Some(envelope.agent), &envelope.event, None, outcome);
             }
         }
         self.tick(now);
@@ -600,7 +641,7 @@ impl Engine {
                 a.compacting = false;
                 s.notices.retain(|n| n.state != DisplayState::Done);
                 s.ambiguous = false;
-                s.degraded = false;
+                s.hook_loss = None;
             }
             Kind::ToolStart => {
                 if a.tools.get(&tool_key).is_some_and(|t| t.terminal) {

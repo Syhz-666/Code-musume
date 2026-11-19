@@ -126,6 +126,154 @@ fn main_stop_is_attributed_once_and_other_work_takes_precedence() {
     );
     assert!(e.take_completed_turn().is_none());
 }
+fn oversized_codex_tool_result(id: &str) -> EnvelopeV2 {
+    let mut input = event(Agent::Codex, "PostToolUse", "codex", "t", json!({}), id);
+    input.payload = "{\"tool_response\":\"".into();
+    input.parse_error = Some(ParseError {
+        kind: "size".into(),
+    });
+    input
+}
+
+#[test]
+fn matched_stop_and_final_produce_summary_after_oversized_tool_result() {
+    use code_musume_core::banter::{Banter, CompletionGate};
+    use code_musume_core::engine::DONE_MS;
+
+    let mut e = engine();
+    let mut banter = Banter::new("test".into(), true);
+    let cx = Agent::Codex;
+    e.ingest(
+        event(
+            Agent::ClaudeCode,
+            "SessionStart",
+            "claude",
+            "other",
+            json!({}),
+            "other-session",
+        ),
+        0,
+    );
+    e.ingest(
+        event(cx, "UserPromptSubmit", "codex", "t", json!({}), "prompt"),
+        1,
+    );
+    e.ingest(
+        event(
+            cx,
+            "PreToolUse",
+            "codex",
+            "t",
+            json!({"tool_use_id": "large"}),
+            "start",
+        ),
+        2,
+    );
+    e.ingest(oversized_codex_tool_result("lost"), 3);
+    assert_eq!(
+        e.latest_diagnostic().unwrap().outcome,
+        "oversized-tool-result"
+    );
+    assert_eq!(e.snapshot().certainty, Certainty::Stale);
+    assert_eq!(e.snapshot().missed_events, 1);
+    assert!(e
+        .snapshot()
+        .sessions
+        .iter()
+        .any(|s| s.agent == Agent::ClaudeCode && s.certainty == Certainty::Observed));
+
+    banter.ingest(
+        VisibleProgress {
+            agent: cx,
+            session: "codex".into(),
+            turn: "t".into(),
+            id: "final".into(),
+            text: "测试通过，发布还未验证。".into(),
+            kind: BanterKind::Completion,
+        },
+        4,
+    );
+    e.ingest(event(cx, "Stop", "codex", "t", json!({}), "stop"), 5);
+    let target = e
+        .take_completed_turn()
+        .expect("exact Stop should close the degraded turn");
+    assert_eq!(e.snapshot().certainty, Certainty::Observed);
+    assert_eq!(e.snapshot().missed_events, 1);
+    banter.completed(target.clone(), 5);
+    assert!(e.completion_gate(&target, 5) == CompletionGate::Waiting);
+    let request = banter
+        .tick_completion(e.completion_gate(&target, 5), 5, true)
+        .0
+        .unwrap();
+
+    // A result arriving out of order cannot make an already closed tool live again.
+    e.ingest(oversized_codex_tool_result("late-result"), 6);
+    assert_eq!(
+        banter.finish(request.id, Some("测试过啦，发布还待查。".into()), 7),
+        Some("ready")
+    );
+    assert!(banter.snapshot().text.is_none());
+    let after_done = 5 + DONE_MS;
+    e.tick(after_done);
+    assert!(e.completion_gate(&target, after_done) == CompletionGate::Idle);
+    banter.tick_completion(e.completion_gate(&target, after_done), after_done, true);
+    assert_eq!(banter.snapshot().kind, Some(BanterKind::Completion));
+}
+
+#[test]
+fn oversized_tool_result_cannot_recover_an_unspecified_loss_or_active_child() {
+    use code_musume_core::banter::CompletionGate;
+    let cx = Agent::Codex;
+    let running = || {
+        let mut e = engine();
+        e.ingest(
+            event(cx, "UserPromptSubmit", "codex", "t", json!({}), "prompt"),
+            0,
+        );
+        e.ingest(
+            event(
+                cx,
+                "PreToolUse",
+                "codex",
+                "t",
+                json!({"tool_use_id": "large"}),
+                "start",
+            ),
+            1,
+        );
+        e
+    };
+    let mut unknown_loss = running();
+    unknown_loss.lost(1, 2);
+    unknown_loss.ingest(oversized_codex_tool_result("lost"), 3);
+    unknown_loss.ingest(event(cx, "Stop", "codex", "t", json!({}), "stop"), 4);
+    assert!(unknown_loss.take_completed_turn().is_none());
+    assert_eq!(unknown_loss.snapshot().certainty, Certainty::Stale);
+
+    let mut e = running();
+    e.ingest(oversized_codex_tool_result("lost"), 3);
+    e.ingest(
+        event(cx, "Stop", "codex", "wrong-turn", json!({}), "wrong-stop"),
+        4,
+    );
+    assert!(e.take_completed_turn().is_none());
+    assert_eq!(e.snapshot().certainty, Certainty::Stale);
+    e.ingest(
+        event(
+            cx,
+            "SubagentStart",
+            "codex",
+            "t",
+            json!({"agent_id": "worker"}),
+            "child",
+        ),
+        5,
+    );
+    e.ingest(event(cx, "Stop", "codex", "t", json!({}), "stop"), 6);
+    let target = e.take_completed_turn().unwrap();
+    assert!(e.completion_gate(&target, 6) == CompletionGate::Blocked);
+}
+
 #[test]
 fn codex_desktop_approvals_do_not_clear_other_sources_or_create_sessions() {
     let mut e = engine().with_codex_approval_sync(true);
