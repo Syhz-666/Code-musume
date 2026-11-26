@@ -1,0 +1,8 @@
+{"type":"session_meta","timestamp":"2026-11-25T06:00:00Z","payload":{"id":"6ef54896-baf1-4c6d-8acd-3eaacc70db3e"}}
+{"type":"event_msg","timestamp":"2026-11-25T06:00:00Z","payload":{"type":"task_started","turn_id":"916cea22-f89d-4a74-a47c-3cb3a3d85393"}}
+{"type":"turn_context","timestamp":"2026-11-25T06:00:00Z","payload":{"turn_id":"916cea22-f89d-4a74-a47c-3cb3a3d85393"}}
+{"type":"response_item","timestamp":"2026-11-25T06:00:03Z","payload":{"type":"message","role":"assistant","phase":"commentary","content":[{"type":"output_text","text":"正在检查登录测试。"}]}}
+{"type":"response_item","timestamp":"2026-11-25T06:00:04Z","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"synthetic user text"}]}}
+{"type":"response_item","timestamp":"2026-11-25T06:00:05Z","payload":{"type":"reasoning","summary":[{"type":"summary_text","text":"synthetic internal reasoning"}]}}
+{"type":"response_item","timestamp":"2026-11-25T06:00:07Z","payload":{"type":"message","role":"assistant","phase":"final_answer","content":[{"type":"output_text","text":"登录测试通过，保存设置还没验证。"}]}}
+{"type":"event_msg","timestamp":"2026-11-25T06:00:07Z","payload":{"type":"task_complete","turn_id":"916cea22-f89d-4a74-a47c-3cb3a3d85393","last_agent_message":"登录测试通过，保存设置还没验证。"}}

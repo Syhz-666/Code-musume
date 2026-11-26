@@ -51,7 +51,7 @@ export async function startCodexPeer() {
   }
   return {
     following: (session) => followed.has(session) && !followed.get(session).destroyed,
-    beginFinalOnly(session) {
+    beginFinalOnly(session, turn = "final-turn") {
       send(followed.get(session), {
         ...fixture[0],
         params: {
@@ -62,13 +62,13 @@ export async function startCodexPeer() {
             revision: 1,
             conversationState: {
               requests: [],
-              turns: [{ turnId: "final-turn", status: "inProgress", items: [] }],
+              turns: [{ turnId: turn, status: "inProgress", items: [] }],
             },
           },
         },
       });
     },
-    finishFinalOnly(session) {
+    addProgress(session, text) {
       send(followed.get(session), {
         ...fixture[0],
         params: {
@@ -79,6 +79,33 @@ export async function startCodexPeer() {
             baseRevision: 1,
             revision: 2,
             patches: [
+              {
+                op: "add",
+                path: ["turns", 0, "items", 0],
+                value: {
+                  type: "agentMessage",
+                  id: "progress-message",
+                  phase: "commentary",
+                  completedAtMs: 2,
+                  text,
+                },
+              },
+            ],
+          },
+        },
+      });
+    },
+    finishFinalOnly(session, text = "登录测试通过，保存设置还没验证。", baseRevision = 1) {
+      send(followed.get(session), {
+        ...fixture[0],
+        params: {
+          ...fixture[0].params,
+          conversationId: session,
+          change: {
+            type: "patches",
+            baseRevision,
+            revision: baseRevision + 1,
+            patches: [
               { op: "replace", path: ["turns", 0, "status"], value: "completed" },
               {
                 op: "add",
@@ -88,7 +115,7 @@ export async function startCodexPeer() {
                   id: "final-message",
                   phase: "final_answer",
                   completedAtMs: 2,
-                  text: "登录测试通过，保存设置还没验证。",
+                  text,
                 },
               },
             ],

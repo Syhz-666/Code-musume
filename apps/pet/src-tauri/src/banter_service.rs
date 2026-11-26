@@ -3,6 +3,7 @@ use crate::{
     banter_credentials::Credentials,
     banter_diagnostics::{self, BanterDiagnostics, Trace},
     claude_progress::Transcript,
+    codex_transcript,
 };
 use code_musume_contracts::{
     Agent, BanterConfig, BanterKind, BanterProjection, BanterStatus, BanterUsage, DisplayState,
@@ -10,14 +11,60 @@ use code_musume_contracts::{
 };
 use code_musume_core::{
     adapter::{normalize, Kind},
-    banter::{Banter, CompletionGate, Dispatch, Entry, IdleGate, QuietActivity, Target},
+    banter::{
+        Banter, CompletionGate, Dispatch, Entry, IdleGate, QuietActivity, Target, MAX_PROGRESS,
+    },
     Engine,
 };
 use code_musume_hook::runtime::{atomic_write, config_dir};
-use std::{collections::BTreeMap, fs};
+use sha2::{Digest, Sha256};
+use std::{
+    cmp::Reverse,
+    collections::{BTreeMap, VecDeque},
+    fs,
+};
 use tokio::sync::{mpsc, watch};
 
 pub type Outcome = Result<SummaryResponse, Failure>;
+
+const TRANSCRIPT_POLL_MS: u64 = 500;
+const MAX_SYNC_BACKUP: usize = 32;
+const MAX_CODEX_TEXT_DIGESTS: usize = 512;
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum CodexSource {
+    Sync11,
+    Sync13,
+    Transcript,
+}
+
+impl CodexSource {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Sync11 => "codex-sync-11",
+            Self::Sync13 => "codex-sync-13",
+            Self::Transcript => "codex-transcript",
+        }
+    }
+}
+
+#[derive(Default)]
+struct CodexCapture {
+    turn: String,
+    transcript: Option<codex_transcript::Transcript>,
+    backup: VecDeque<(u64, CodexSource, VisibleProgress)>,
+    final_source: Option<(CodexSource, String)>,
+    seen_progress: VecDeque<String>,
+}
+
+impl CodexCapture {
+    fn backup_ready(&self, due: u64, p: &VisibleProgress, engine: &Engine, now: u64) -> bool {
+        due <= now
+            || self.transcript.is_none()
+            || p.kind == BanterKind::Completion
+                && engine.active_turn(Agent::Codex, &p.session).is_none()
+    }
+}
 
 pub struct Service {
     pub config: BanterConfig,
@@ -26,6 +73,8 @@ pub struct Service {
     capture: watch::Sender<Option<u64>>,
     credentials: Credentials,
     transcripts: BTreeMap<String, Transcript>,
+    codex_capture: BTreeMap<String, CodexCapture>,
+    codex_transcript_diagnostics: codex_transcript::Diagnostics,
     client: Option<reqwest::Client>,
     outcomes: mpsc::Sender<(u64, Outcome)>,
     task: Option<tauri::async_runtime::JoinHandle<()>>,
@@ -72,6 +121,8 @@ impl Service {
             capture,
             credentials,
             transcripts: BTreeMap::new(),
+            codex_capture: BTreeMap::new(),
+            codex_transcript_diagnostics: Default::default(),
             client: banter_api::client().ok(),
             outcomes,
             task: None,
@@ -197,6 +248,7 @@ impl Service {
         self.capture
             .send_replace(enabled.then_some(self.generation));
         self.transcripts.clear();
+        self.codex_capture.clear();
         self.claude_ready = false;
         self.codex_ready = false;
         self.core.reset(enabled);
@@ -255,7 +307,8 @@ impl Service {
         ) {
             self.core.discard_final(event.agent, &event.session);
         }
-        if event.agent != Agent::ClaudeCode {
+        if event.agent == Agent::Codex {
+            self.codex_hook(envelope, engine, &event.session, event.kind);
             return;
         }
         if event.kind == Kind::Done {
@@ -289,6 +342,51 @@ impl Service {
             self.claude_ready = true;
         }
     }
+
+    fn codex_hook(&mut self, envelope: &EnvelopeV2, engine: &Engine, session: &str, kind: Kind) {
+        if matches!(
+            kind,
+            Kind::Done | Kind::SessionEnd | Kind::Error | Kind::Interrupt
+        ) {
+            return;
+        }
+        let Some(turn) = engine.active_turn(Agent::Codex, session) else {
+            return;
+        };
+        let capture = self.codex_turn(session, turn);
+        if capture.transcript.is_some() {
+            return;
+        }
+        let payload: serde_json::Value =
+            serde_json::from_str(&envelope.payload).unwrap_or_default();
+        let Some(path) = payload["transcript_path"]
+            .as_str()
+            .filter(|path| !path.is_empty())
+        else {
+            self.codex_transcript_diagnostics.last_issue = Some("missing-transcript-path");
+            return;
+        };
+        match codex_transcript::Transcript::open(path, session, turn) {
+            Ok(transcript) => {
+                capture.transcript = Some(transcript);
+                self.codex_transcript_diagnostics.opened += 1;
+                self.codex_transcript_diagnostics.last_issue = None;
+            }
+            Err(issue) => self.codex_transcript_diagnostics.last_issue = Some(issue),
+        }
+    }
+
+    fn codex_turn(&mut self, session: &str, turn: &str) -> &mut CodexCapture {
+        let capture = self.codex_capture.entry(session.into()).or_default();
+        if capture.turn != turn {
+            *capture = CodexCapture {
+                turn: turn.into(),
+                ..Default::default()
+            };
+        }
+        capture
+    }
+
     pub fn completed(&mut self, target: Target, now: u64) {
         self.diagnostics.record(
             Trace::new(
@@ -345,6 +443,7 @@ impl Service {
             "modelGate": self.model_gate(now),
             "inFlight": self.request_trace.as_ref().map(|(trace, started)| trace.clone().elapsed(now.saturating_sub(*started))),
             "completionWaitingForRequest": self.core.completion_waiting_for_request(),
+            "codexTranscript": self.codex_transcript_diagnostics,
         })
     }
 
@@ -366,30 +465,170 @@ impl Service {
         })
     }
 
+    #[cfg(feature = "e2e")]
     pub fn progress(&mut self, generation: u64, engine: &Engine, p: VisibleProgress, now: u64) {
-        let trace = Trace::new(
+        self.progress_from(generation, engine, p, now, None);
+    }
+
+    pub fn codex_sync(
+        &mut self,
+        generation: u64,
+        version: u32,
+        engine: &Engine,
+        p: VisibleProgress,
+        now: u64,
+    ) {
+        let source = match version {
+            11 => CodexSource::Sync11,
+            13 => CodexSource::Sync13,
+            _ => return,
+        };
+        if generation == self.generation
+            && p.text.chars().take(MAX_PROGRESS + 1).count() <= MAX_PROGRESS
+            && self.accepts(engine, &p, now)
+        {
+            if let Some(capture) = self
+                .codex_capture
+                .get_mut(&p.session)
+                .filter(|c| c.turn == p.turn && c.transcript.is_some())
+            {
+                if capture.backup.len() < MAX_SYNC_BACKUP {
+                    capture
+                        .backup
+                        .push_back((now + TRANSCRIPT_POLL_MS, source, p));
+                } else {
+                    self.codex_transcript_diagnostics.last_issue = Some("sync-backup-full");
+                }
+                return;
+            }
+        }
+        self.progress_from(generation, engine, p, now, Some(source));
+    }
+
+    fn accepts(&self, engine: &Engine, p: &VisibleProgress, now: u64) -> bool {
+        engine.active_turn(p.agent, &p.session) == Some(p.turn.as_str())
+            || p.kind == BanterKind::Completion
+                && self.core.accepts_final(p.agent, &p.session, &p.turn, now)
+    }
+
+    fn progress_from(
+        &mut self,
+        generation: u64,
+        engine: &Engine,
+        p: VisibleProgress,
+        now: u64,
+        source: Option<CodexSource>,
+    ) {
+        let mut trace = Trace::new(
             banter_diagnostics::kind(p.kind),
             "source-message",
             "received",
         )
         .conversation(p.agent, &p.session, &p.turn);
+        if let Some(source) = source {
+            trace = trace.source(source.name());
+        }
         let disposition = if generation != self.generation {
             "stale-capture-generation"
         } else if !self.config.enabled {
             "work-banter-disabled"
-        } else if engine.active_turn(p.agent, &p.session) == Some(p.turn.as_str())
-            || p.kind == BanterKind::Completion
-                && self.core.accepts_final(p.agent, &p.session, &p.turn, now)
-        {
+        } else if self.accepts(engine, &p, now) {
             if p.agent == Agent::Codex {
                 self.codex_ready = true;
             }
-            self.core.ingest(p, now)
+            match source {
+                Some(source) => self.ingest_codex(p, source, now),
+                None => self.core.ingest(p, now),
+            }
         } else {
             "outside-active-turn-or-final-window"
         };
         self.diagnostics
             .record(trace.outcome("source-message", disposition), now);
+    }
+
+    fn ingest_codex(
+        &mut self,
+        mut p: VisibleProgress,
+        source: CodexSource,
+        now: u64,
+    ) -> &'static str {
+        // The JSONL does not always carry the IPC item ID. A turn-scoped text
+        // digest deduplicates matching visible messages across the two transports.
+        let digest = format!("{:x}", Sha256::digest(p.text.trim().as_bytes()));
+        let (session, turn) = (p.session.clone(), p.turn.clone());
+        let capture = self.codex_turn(&session, &turn);
+        if p.kind != BanterKind::Completion {
+            if capture.seen_progress.contains(&digest) {
+                return "duplicate";
+            }
+            p.id = if source == CodexSource::Transcript {
+                format!("{turn}:transcript:{digest}")
+            } else {
+                format!("{turn}:sync:{}", p.id)
+            };
+            let disposition = self.core.ingest(p, now);
+            if disposition == "accepted" {
+                let seen = &mut self.codex_turn(&session, &turn).seen_progress;
+                if seen.len() == MAX_CODEX_TEXT_DIGESTS {
+                    seen.pop_front();
+                }
+                seen.push_back(digest);
+            }
+            return disposition;
+        }
+        if let Some((previous, text)) = &mut capture.final_source {
+            if *text == digest {
+                *previous = (*previous).max(source);
+                return "duplicate";
+            }
+            if *previous > source {
+                return "preferred-final-already-captured";
+            }
+        }
+        let disposition = self.core.ingest(p, now);
+        if disposition == "accepted" {
+            self.codex_turn(&session, &turn).final_source = Some((source, digest));
+        }
+        disposition
+    }
+
+    fn poll_codex(&mut self, engine: &Engine, now: u64) {
+        let mut batch = Vec::new();
+        for capture in self.codex_capture.values_mut() {
+            if let Some(transcript) = &mut capture.transcript {
+                match transcript.read() {
+                    Ok((messages, issue)) => {
+                        if let Some(issue) = issue {
+                            self.codex_transcript_diagnostics.last_issue = Some(issue);
+                        }
+                        for p in messages {
+                            if p.kind == BanterKind::Completion {
+                                self.codex_transcript_diagnostics.final_messages += 1;
+                            } else {
+                                self.codex_transcript_diagnostics.progress_messages += 1;
+                            }
+                            batch.push((CodexSource::Transcript, p));
+                        }
+                    }
+                    Err(issue) => {
+                        capture.transcript = None;
+                        self.codex_transcript_diagnostics.last_issue = Some(issue);
+                    }
+                }
+            }
+            for (due, source, p) in std::mem::take(&mut capture.backup) {
+                if capture.backup_ready(due, &p, engine, now) {
+                    batch.push((source, p));
+                } else {
+                    capture.backup.push_back((due, source, p));
+                }
+            }
+        }
+        batch.sort_by_key(|(source, _)| Reverse(*source));
+        for (source, p) in batch {
+            self.progress_from(self.generation, engine, p, now, Some(source));
+        }
     }
     pub fn reconcile_idle(&mut self, engine: &Engine, paused: bool, now: u64) {
         let gate = if !engine.idle_banter_available() {
@@ -437,8 +676,23 @@ impl Service {
                     .core
                     .accepts_final(Agent::ClaudeCode, id, t.turn(), now)
         });
-        if dispatch && now.saturating_sub(self.last_poll) >= 500 {
+        self.codex_capture.retain(|id, capture| {
+            engine.active_turn(Agent::Codex, id) == Some(capture.turn.as_str())
+                || self
+                    .core
+                    .accepts_final(Agent::Codex, id, &capture.turn, now)
+        });
+        let sync_backup_ready = self.codex_capture.values().any(|capture| {
+            capture
+                .backup
+                .iter()
+                .any(|(due, _, p)| capture.backup_ready(*due, p, engine, now))
+        });
+        if dispatch
+            && (now.saturating_sub(self.last_poll) >= TRANSCRIPT_POLL_MS || sync_backup_ready)
+        {
             self.last_poll = now;
+            self.poll_codex(engine, now);
             let mut batch = Vec::new();
             for (id, t) in &mut self.transcripts {
                 if let Ok(messages) = t.read(id) {
@@ -446,7 +700,7 @@ impl Service {
                 }
             }
             for message in batch {
-                self.progress(self.generation, engine, message, now);
+                self.progress_from(self.generation, engine, message, now, None);
             }
         }
         let snapshot = engine.snapshot();

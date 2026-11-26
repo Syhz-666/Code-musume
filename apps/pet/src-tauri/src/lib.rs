@@ -7,6 +7,7 @@ mod characters;
 mod claude_progress;
 #[cfg(windows)]
 mod codex_approval;
+mod codex_transcript;
 #[cfg(feature = "e2e")]
 mod e2e_environment;
 mod pipeline_diagnostics;

@@ -44,6 +44,7 @@ export const config = {
           CODE_MUSUME_DATA_DIR: join(runDir, "runtime"),
           CODE_MUSUME_CONFIG_DIR: join(runDir, "config"),
           CODE_MUSUME_E2E_CODEX_PIPE: codexTestPipe,
+          CODEX_HOME: join(runDir, "codex-home"),
         },
       },
     ],

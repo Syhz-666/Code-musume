@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { join } from "node:path";
 import { PNG } from "pngjs";
@@ -22,6 +22,20 @@ import {
 
 const cc = "claude-code",
   cx = "codex";
+
+async function restoreBanterConfig(previousConfig, mockBaseUrl) {
+  const { config } = await nativeInvoke("get_banter_status");
+  if (config.baseUrl === mockBaseUrl) {
+    await nativeInvoke("save_banter", { config, key: null, deleteKey: true });
+  }
+  const restored = await nativeInvoke("save_banter", {
+    config: previousConfig,
+    key: null,
+    deleteKey: false,
+  });
+  assert.deepEqual(restored.config, previousConfig);
+}
+
 describe("Actual desktop event chain and settings", () => {
   let initialConfig;
   let coldStartReady = false;
@@ -400,6 +414,111 @@ describe("Actual desktop event chain and settings", () => {
       await new Promise((resolve) => mock.close(resolve));
     }
   });
+  it("follows a live Codex transcript and prefers it over the legacy final message", async () => {
+    const { config: previousConfig } = await nativeInvoke("get_banter_status");
+    const fixture = readFileSync(
+      new URL("../../../fixtures/codex-sync/rollout-0.171.jsonl", import.meta.url),
+      "utf8",
+    )
+      .trim()
+      .split(/\r?\n/);
+    const session = JSON.parse(fixture[0]).payload.id;
+    const turn = JSON.parse(fixture[1]).payload.turn_id;
+    const day = join(runDir, "codex-home", "sessions", "2026", "11", "25");
+    mkdirSync(day, { recursive: true });
+    const transcriptPath = join(day, `rollout-2026-11-25T14-00-00-${session}.jsonl`);
+    writeFileSync(transcriptPath, `${fixture.slice(0, 3).join("\n")}\n`);
+
+    const requests = [];
+    const mock = createServer(async (req, res) => {
+      const chunks = [];
+      for await (const chunk of req) chunks.push(chunk);
+      const { messages } = JSON.parse(Buffer.concat(chunks).toString());
+      const input = JSON.parse(messages.at(-1).content);
+      requests.push(input);
+      const text = input.本轮最终回复 ? "登录过啦，保存还待查。" : "我在看登录测试呢。";
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({ choices: [{ finish_reason: "stop", message: { content: text } }] }));
+    });
+    await new Promise((resolve) => mock.listen(0, "127.0.0.1", resolve));
+    const baseUrl = `http://127.0.0.1:${mock.address().port}/v1`;
+    let peer;
+    const diagnostics = () => nativeInvoke("get_pipeline_diagnostics");
+    const advance = (ms) => nativeInvoke("e2e_advance_clock", { ms });
+    try {
+      peer = await startCodexPeer();
+      await nativeInvoke("e2e_set_clock_paused", { paused: true });
+      await nativeInvoke("save_banter", {
+        config: { enabled: true, baseUrl, model: "rollout-mock" },
+        key: "synthetic-key",
+        deleteKey: false,
+      });
+      await advance(30_001);
+      const before = await diagnostics();
+      await hook(cx, "UserPromptSubmit", { transcript_path: transcriptPath }, session, turn);
+      await pet({ state: "thinking", agent: cx });
+      await browser.waitUntil(
+        async () =>
+          (await diagnostics()).banterPipeline.codexTranscript.opened ===
+          before.banterPipeline.codexTranscript.opened + 1,
+      );
+      await browser.waitUntil(() => peer.following(session));
+      peer.beginFinalOnly(session, turn);
+      peer.addProgress(session, "正在检查登录测试。");
+      await browser.waitUntil(
+        async () =>
+          (await diagnostics()).codexApprovalSync.messageCapture.progressMessages >
+          before.codexApprovalSync.messageCapture.progressMessages,
+      );
+
+      appendFileSync(transcriptPath, `${fixture[3]}\n${fixture.slice(3, 6).join("\n")}\n`);
+      await advance(500);
+      const bubble = await browser.$('.bubble[data-kind="banter"]');
+      await bubble.waitForDisplayed();
+      assert.equal(await bubble.getText(), "我在看登录测试呢。");
+      assert.deepEqual(requests, [{ 可见进展: "正在检查登录测试。" }]);
+
+      peer.finishFinalOnly(session, "旧同步返回的另一条最终回复。", 2);
+      await browser.waitUntil(
+        async () =>
+          (await diagnostics()).codexApprovalSync.messageCapture.finalMessages >
+          before.codexApprovalSync.messageCapture.finalMessages,
+      );
+      appendFileSync(transcriptPath, `${fixture.slice(6).join("\n")}\n`);
+      await hook(cx, "Stop", { transcript_path: transcriptPath }, session, turn);
+      await pet({ state: "done" });
+      await advance(500);
+      await browser.waitUntil(async () => (await diagnostics()).banterCompletion.phase === "ready");
+      await advance(2500);
+      await pet({ state: "idle" });
+      await browser.waitUntil(async () => (await bubble.getText()) === "登录过啦，保存还待查。");
+      assert.deepEqual(requests, [
+        { 可见进展: "正在检查登录测试。" },
+        { 本轮最终回复: "登录测试通过，保存设置还没验证。" },
+      ]);
+      const report = await diagnostics();
+      const sources = report.banterPipeline.trace.entries;
+      assert(sources.some((e) => e.source === "codex-transcript" && e.reason === "duplicate"));
+      assert(sources.some((e) => e.source === "codex-sync-13" && e.reason === "duplicate"));
+      assert(
+        sources.some(
+          (e) => e.source === "codex-sync-13" && e.reason === "preferred-final-already-captured",
+        ),
+      );
+      assert(!JSON.stringify(report).includes("正在检查登录测试。"));
+      assert(!JSON.stringify(report).includes(transcriptPath));
+    } finally {
+      try {
+        await peer?.close();
+        await selectWindow("settings");
+        await restoreBanterConfig(previousConfig, baseUrl);
+      } finally {
+        mock.closeAllConnections();
+        await new Promise((resolve) => mock.close(resolve));
+        await nativeInvoke("e2e_set_clock_paused", { paused: false });
+      }
+    }
+  });
   it("rolls for idle chatter, rests, wakes, and yields to work in both renderers", async function () {
     this.timeout(150_000);
     const status = () => nativeInvoke("get_banter_status");
@@ -496,16 +615,7 @@ describe("Actual desktop event chain and settings", () => {
     } finally {
       try {
         await selectWindow("settings");
-        const { config } = await status();
-        if (config.baseUrl === mockConfig.baseUrl) {
-          await nativeInvoke("save_banter", { config, key: null, deleteKey: true });
-        }
-        const restored = await nativeInvoke("save_banter", {
-          config: previousConfig,
-          key: null,
-          deleteKey: false,
-        });
-        assert.deepEqual(restored.config, previousConfig);
+        await restoreBanterConfig(previousConfig, mockConfig.baseUrl);
       } finally {
         mock.closeAllConnections();
         await new Promise((resolve) => mock.close(resolve));

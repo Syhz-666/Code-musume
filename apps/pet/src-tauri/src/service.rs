@@ -282,7 +282,7 @@ impl Native {
         let (codex_sessions, wanted) = watch::channel(Vec::new());
         let (approval_updates, mut approvals) = mpsc::channel(MAX_QUEUE_ENTRIES);
         let (capture, capture_rx) = watch::channel(None);
-        let (progress_tx, mut progress_rx) = mpsc::channel::<(u64, VisibleProgress)>(32);
+        let (progress_tx, mut progress_rx) = mpsc::channel::<(u64, u32, VisibleProgress)>(32);
         let (outcome_tx, mut outcome_rx) = mpsc::channel(4);
         let codex_approval_sync = approval_pipe.is_some();
         #[cfg(windows)]
@@ -486,8 +486,8 @@ impl Native {
                         received=Some(Instant::now());
                         engine.update_codex_approvals(id,next,state.clock.now());
                     },
-                    Some((generation, message)) = progress_rx.recv() => {
-                        banter.progress(generation, &engine, message, state.clock.now());
+                    Some((generation, version, message)) = progress_rx.recv() => {
+                        banter.codex_sync(generation, version, &engine, message, state.clock.now());
                     },
                     Some((id, result)) = outcome_rx.recv() => {
                         outcome = Some((id, result));

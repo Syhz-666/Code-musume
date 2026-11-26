@@ -8,7 +8,7 @@ pub use idle::{IdleDiagnostics, IdleGate};
 
 const SEGMENT_CHARS: usize = 12_000;
 const SEGMENT_MESSAGES: usize = 32;
-const MAX_PROGRESS: usize = 4_000;
+pub const MAX_PROGRESS: usize = 4_000;
 const INTERVAL: u64 = 30_000;
 const QUIET: u64 = 120_000;
 const QUIET_FALLBACK: &str = "还没新进展，我陪你等会儿。";

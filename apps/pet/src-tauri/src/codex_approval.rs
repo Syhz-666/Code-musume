@@ -399,7 +399,7 @@ struct Observer {
 enum Observation {
     Changed(Update),
     Resync(String),
-    Progress(VisibleProgress),
+    Progress(VisibleProgress, u32),
 }
 
 fn visible_messages(
@@ -644,7 +644,10 @@ impl Observer {
             }
         }
         let next = current.as_ref().map(|stream| stream.counts);
-        let mut updates: Vec<_> = messages.into_iter().map(Observation::Progress).collect();
+        let mut updates: Vec<_> = messages
+            .into_iter()
+            .map(|message| Observation::Progress(message, version))
+            .collect();
         if change["type"] == "patches"
             && self.capture
             && current.as_ref().is_some_and(|s| s.progress.is_none())
@@ -719,7 +722,7 @@ async fn connected(
     updates: &mpsc::Sender<Update>,
     diagnostics: &watch::Sender<SyncDiagnostics>,
     capture: &mut watch::Receiver<Option<u64>>,
-    progress: Option<&mpsc::Sender<(u64, VisibleProgress)>>,
+    progress: Option<&mpsc::Sender<(u64, u32, VisibleProgress)>>,
 ) -> Result<(), TransportFailure> {
     let init = uuid::Uuid::new_v4().to_string();
     send(
@@ -789,10 +792,10 @@ async fn connected(
                                 }
                                 Observation::Resync(id) => follow(&mut pipe, client, &id, true).await
                                     .map_err(|e| TransportFailure::new("follow-write", Some(e)))?,
-                                Observation::Progress(message) => {
+                                Observation::Progress(message, version) => {
                                     if let (Some(generation), Some(tx)) = (generation, progress) {
                                         let kind = message.kind;
-                                        if tx.try_send((generation, message)).is_ok() {
+                                        if tx.try_send((generation, version, message)).is_ok() {
                                             observer.diagnostics.metrics.visible_messages += 1;
                                             observer.diagnostics.metrics.last_visible_at_unix_ms = unix_ms();
                                             if kind == BanterKind::Completion {
@@ -856,7 +859,7 @@ pub async fn observe(
     updates: mpsc::Sender<Update>,
     diagnostics: watch::Sender<SyncDiagnostics>,
     mut capture: watch::Receiver<Option<u64>>,
-    progress: Option<mpsc::Sender<(u64, VisibleProgress)>>,
+    progress: Option<mpsc::Sender<(u64, u32, VisibleProgress)>>,
 ) {
     loop {
         if wanted.wait_for(|ids| !ids.is_empty()).await.is_err() {

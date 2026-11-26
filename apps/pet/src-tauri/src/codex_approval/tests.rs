@@ -38,7 +38,7 @@ fn takes_final_reply_from_terminal_patches_only_for_a_live_turn() {
         final_frame["version"] = json!(version);
         let events = observer.frame(&final_frame);
         assert!(
-            matches!(&events[..], [Observation::Progress(p)] if p.kind == BanterKind::Completion && p.turn == "live" && p.id == "new")
+            matches!(&events[..], [Observation::Progress(p, v)] if *v == version && p.kind == BanterKind::Completion && p.turn == "live" && p.id == "new")
         );
         assert!(observer.frame(&final_frame).is_empty());
     }
@@ -64,7 +64,7 @@ fn replays_captured_v13_snapshot_and_incremental_visible_progress() {
         );
         for event in update {
             match event {
-                Observation::Progress(message) => visible.push(message),
+                Observation::Progress(message, 13) => visible.push(message),
                 Observation::Changed((_, Some(counts))) => {
                     assert!(counts == state(0, 0, 0));
                     approvals += 1;
@@ -104,7 +104,7 @@ fn captures_only_new_completed_visible_messages_from_local_patches() {
     let output = observer.frame(&snapshot("local-thread", 1, initial.clone()));
     assert!(output
         .iter()
-        .all(|event| !matches!(event, Observation::Progress(_))));
+        .all(|event| !matches!(event, Observation::Progress(..))));
     assert!(observer.frame(&delta("local-thread", 1, json!([
         {"op":"replace","path":["turnHistory","history","entitiesByKey","current","items",2,"text"],"value":"new progress"}
     ]))).is_empty());
@@ -117,7 +117,7 @@ fn captures_only_new_completed_visible_messages_from_local_patches() {
     );
     let output = observer.frame(&complete);
     assert!(
-        matches!(&output[..], [Observation::Progress(p)] if p.id == "new" && p.text == "new progress" && p.turn == "turn")
+        matches!(&output[..], [Observation::Progress(p, 11)] if p.id == "new" && p.text == "new progress" && p.turn == "turn")
     );
     assert!(observer.frame(&complete).is_empty());
     assert!(observer
@@ -519,7 +519,8 @@ fn check_pipe_approval_lifecycle(version: u32) {
                 message
             };
             write_peer(&mut server, new_progress(1, 1)).await;
-            let (generation, progress) = texts.recv().await.unwrap();
+            let (generation, observed_version, progress) = texts.recv().await.unwrap();
+            assert_eq!(observed_version, version);
             assert_eq!(generation, 1);
             assert_eq!(progress.id, "new-1");
 
@@ -531,7 +532,8 @@ fn check_pipe_approval_lifecycle(version: u32) {
             baseline["params"]["change"]["revision"] = json!(3);
             write_peer(&mut server, baseline).await;
             write_peer(&mut server, new_progress(3, 1)).await;
-            let (generation, progress) = texts.recv().await.unwrap();
+            let (generation, observed_version, progress) = texts.recv().await.unwrap();
+            assert_eq!(observed_version, version);
             assert_eq!(generation, 2);
             assert_eq!(progress.text, "new progress");
             client.abort();
