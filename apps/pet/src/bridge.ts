@@ -10,24 +10,66 @@ import { Channel, invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
 export { invoke, isTauri };
+
+type SnapshotStream = "projection" | "banter";
+
+async function subscribeSnapshot<T>(
+  stream: SnapshotStream,
+  accept: (snapshot: T) => void,
+): Promise<() => void> {
+  const subscriptionId = crypto.randomUUID();
+  let receiveTicket!: (ticket: number) => void;
+  const offered = new Promise<number>((resolve) => {
+    receiveTicket = resolve;
+  });
+  let stopped = false;
+  const onUpdate = new Channel<{ snapshot: T } | { ticket: number }>((update) => {
+    if (stopped) return;
+    if ("ticket" in update) receiveTicket(update.ticket);
+    else accept(update.snapshot);
+  });
+  const stop = () => {
+    stopped = true;
+    void invoke(`unsubscribe_${stream}`, { subscriptionId }).catch(() => {});
+  };
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_resolve, reject) => {
+    timeout = setTimeout(() => reject(new Error("桌宠订阅确认超时")), 4000);
+  });
+  const handshake = async () => {
+    const [, ticket] = await Promise.all([
+      invoke(`subscribe_${stream}`, { subscriptionId, onUpdate }),
+      offered,
+    ]);
+    if (stopped) return;
+    const snapshot = await invoke<T>(`confirm_${stream}`, { subscriptionId, ticket });
+    if (!stopped) accept(snapshot);
+  };
+  try {
+    await Promise.race([handshake(), deadline]);
+    return stop;
+  } catch (error) {
+    stop();
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function watchSnapshots<T>(stream: SnapshotStream, accept: (snapshot: T) => void) {
+  // A WebView that lost the initial channel message can start a fresh handshake once.
+  return subscribeSnapshot(stream, accept).catch(() => subscribeSnapshot(stream, accept));
+}
+
 export async function watchBanter(callback: (p: BanterProjection) => void): Promise<() => void> {
   if (!isTauri()) return () => {};
-  const subscriptionId = crypto.randomUUID();
-  const channel = new Channel<BanterProjection>();
   let revision = -1;
-  let stopped = false;
-  const accept = (p: BanterProjection) => {
-    if (!stopped && p.revision > revision) {
+  return watchSnapshots<BanterProjection>("banter", (p) => {
+    if (p.revision > revision) {
       revision = p.revision;
       callback(p);
     }
-  };
-  channel.onmessage = accept;
-  accept(await invoke<BanterProjection>("subscribe_banter", { onUpdate: channel, subscriptionId }));
-  return () => {
-    stopped = true;
-    void invoke("unsubscribe_banter", { subscriptionId }).catch(() => {});
-  };
+  });
 }
 export async function watchAnimationPreview(
   callback: (p: AnimationPreview) => void,
@@ -74,24 +116,15 @@ export const preview: Projection = {
   sessions: [],
   capabilities: [],
 };
-export async function watchProjection(callback: (p: Projection) => void): Promise<() => void> {
+export async function watchProjection(
+  callback: (p: Projection) => void,
+  store = new ProjectionStore(),
+): Promise<() => void> {
   if (!isTauri()) {
     callback(preview);
     return () => {};
   }
-  const store = new ProjectionStore();
-  const id = crypto.randomUUID();
-  const channel = new Channel<Projection>();
-  let stopped = false;
-  const accept = (p: Projection) => {
-    if (!stopped && store.accept(p)) callback(p);
-  };
-  channel.onmessage = accept;
-  accept(
-    await invoke<Projection>("subscribe_projection", { onUpdate: channel, subscriptionId: id }),
-  );
-  return () => {
-    stopped = true;
-    void invoke("unsubscribe_projection", { subscriptionId: id });
-  };
+  return watchSnapshots<Projection>("projection", (p) => {
+    if (store.accept(p)) callback(p);
+  });
 }

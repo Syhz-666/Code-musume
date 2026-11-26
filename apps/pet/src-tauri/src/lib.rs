@@ -14,6 +14,7 @@ mod pipeline_diagnostics;
 mod platform;
 mod render_receipts;
 mod service;
+mod snapshot_subscriptions;
 use code_musume_contracts::*;
 use code_musume_hook::{installer, runtime};
 use service::Native;
@@ -149,8 +150,18 @@ async fn subscribe_projection(
     s: State<'_, Arc<Native>>,
     on_update: JavaScriptChannelId,
     subscription_id: String,
-) -> Result<Projection, String> {
+) -> Result<(), String> {
     s.subscribe(webview, subscription_id, on_update).await
+}
+#[tauri::command]
+async fn confirm_projection(
+    window: WebviewWindow,
+    s: State<'_, Arc<Native>>,
+    subscription_id: String,
+    ticket: u64,
+) -> Result<Projection, String> {
+    s.confirm_subscription(window.label().into(), subscription_id, ticket)
+        .await
 }
 #[tauri::command]
 async fn unsubscribe_projection(
@@ -158,8 +169,7 @@ async fn unsubscribe_projection(
     s: State<'_, Arc<Native>>,
     subscription_id: String,
 ) -> Result<(), String> {
-    s.unsubscribe(format!("{}:{subscription_id}", window.label()))
-        .await;
+    s.unsubscribe(window.label().into(), subscription_id).await;
     Ok(())
 }
 #[tauri::command]
@@ -172,8 +182,18 @@ async fn subscribe_banter(
     s: State<'_, Arc<Native>>,
     on_update: JavaScriptChannelId,
     subscription_id: String,
-) -> Result<BanterProjection, String> {
+) -> Result<(), String> {
     s.banter_subscribe(webview, subscription_id, on_update)
+        .await
+}
+#[tauri::command]
+async fn confirm_banter(
+    window: WebviewWindow,
+    s: State<'_, Arc<Native>>,
+    subscription_id: String,
+    ticket: u64,
+) -> Result<BanterProjection, String> {
+    s.confirm_banter_subscription(window.label().into(), subscription_id, ticket)
         .await
 }
 #[tauri::command]
@@ -182,7 +202,7 @@ async fn unsubscribe_banter(
     s: State<'_, Arc<Native>>,
     subscription_id: String,
 ) -> Result<(), String> {
-    s.banter_unsubscribe(format!("{}:{subscription_id}", window.label()))
+    s.banter_unsubscribe(window.label().into(), subscription_id)
         .await;
     Ok(())
 }
@@ -596,7 +616,9 @@ pub fn run() {
             show_pet_menu,
             quit_app,
             subscribe_projection,
+            confirm_projection,
             subscribe_banter,
+            confirm_banter,
             unsubscribe_banter,
             get_banter_projection,
             report_banter_rendered,

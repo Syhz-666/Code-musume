@@ -56,6 +56,10 @@ pub struct PipelineTrace {
     pub subscribers: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub revision: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub display_window: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subscription_ticket: Option<u64>,
 }
 impl PipelineTrace {
     pub fn new(stage: &'static str, outcome: &str) -> Self {

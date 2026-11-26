@@ -7,6 +7,7 @@ import {
   type Config,
   DEFAULT_ANIMATION_PREVIEW,
   type Projection,
+  ProjectionStore,
   STATE_LABELS,
 } from "@code-musume/protocol";
 import { listen } from "@tauri-apps/api/event";
@@ -44,6 +45,7 @@ const defaults: Config = {
 };
 let config = { ...defaults },
   current = preview;
+const projectionStore = new ProjectionStore();
 let animationPreview: AnimationPreview = { ...DEFAULT_ANIMATION_PREVIEW };
 const waitingPresentation = new WaitingPresentation();
 let visualTarget = {
@@ -425,10 +427,16 @@ function submitReceipt() {
       }
       acknowledged = key;
       hostNode.dataset.renderedRevision = String(current.revision);
-      void invoke("report_rendered", {
+      void invoke<boolean>("report_rendered", {
         instanceId: current.instanceId,
         revision: current.revision,
-      }).catch(() => {});
+      })
+        .then((accepted) => {
+          if (!accepted && key === receiptKey() && visible && !manualPreviewActive()) {
+            return refreshProjection();
+          }
+        })
+        .catch(() => {});
     });
   });
 }
@@ -514,6 +522,11 @@ function apply(p: Projection, immediate = false) {
   app?.render();
   submitReceipt();
   wakeDOM();
+}
+async function refreshProjection(repaint = false, immediate = false) {
+  const latest = await invoke<Projection>("get_projection");
+  if (projectionStore.accept(latest)) apply(latest, immediate);
+  else if (repaint) apply(current, immediate);
 }
 function applyAnimationPreview(next: AnimationPreview) {
   animationPreview = next;
@@ -742,7 +755,7 @@ async function main() {
     domTick();
   }
   const stopAnimationPreview = await watchAnimationPreview(applyAnimationPreview);
-  const stop = await watchProjection(apply);
+  const stop = await watchProjection(apply, projectionStore);
   const stopBanter = await watchBanter((snapshot) => {
     banter = snapshot;
     updateBubble();
@@ -763,7 +776,7 @@ async function main() {
       }
       config = next;
       if (visible) {
-        apply(await invoke<Projection>("get_projection"), !wasVisible);
+        await refreshProjection(true, !wasVisible);
         app?.start();
       } else app?.stop();
     });

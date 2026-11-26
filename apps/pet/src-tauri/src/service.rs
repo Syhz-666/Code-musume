@@ -1,4 +1,7 @@
-use super::pipeline_diagnostics::{PipelineDiagnostics, PipelineTrace};
+use super::{
+    pipeline_diagnostics::{PipelineDiagnostics, PipelineTrace},
+    snapshot_subscriptions::SnapshotSubscriptions,
+};
 use axum::{
     body::Bytes,
     extract::{DefaultBodyLimit, State},
@@ -21,10 +24,7 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use subtle::ConstantTimeEq;
-use tauri::{
-    ipc::{Channel, JavaScriptChannelId},
-    AppHandle, Emitter, Manager, Webview,
-};
+use tauri::{ipc::JavaScriptChannelId, AppHandle, Emitter, Manager, Webview};
 use tokio::sync::{mpsc, oneshot, watch};
 
 type Inspection = (
@@ -43,17 +43,24 @@ enum Message {
         Box<Webview>,
         String,
         JavaScriptChannelId,
-        oneshot::Sender<Projection>,
+        oneshot::Sender<()>,
     ),
-    Unsubscribe(String),
+    ConfirmSubscription(String, String, u64, oneshot::Sender<Option<Projection>>),
+    Unsubscribe(String, String),
     Get(oneshot::Sender<Projection>),
     BanterSubscribe(
         Box<Webview>,
         String,
         JavaScriptChannelId,
-        oneshot::Sender<BanterProjection>,
+        oneshot::Sender<()>,
     ),
-    BanterUnsubscribe(String),
+    ConfirmBanterSubscription(
+        String,
+        String,
+        u64,
+        oneshot::Sender<Option<BanterProjection>>,
+    ),
+    BanterUnsubscribe(String, String),
     BanterGet(oneshot::Sender<BanterProjection>),
     BanterRendered(String, u64),
     BanterStatus(oneshot::Sender<BanterStatus>),
@@ -165,6 +172,24 @@ impl Native {
             .lock()
             .unwrap()
             .record(entry, self.clock.now());
+    }
+    fn trace_subscription(
+        &self,
+        stage: &'static str,
+        outcome: &'static str,
+        window: &str,
+        ticket: u64,
+        revision: Option<u64>,
+    ) {
+        let mut trace = PipelineTrace::new(stage, outcome);
+        trace.display_window = Some(match window {
+            "pet" => "pet",
+            "settings" => "settings",
+            _ => "other",
+        });
+        trace.subscription_ticket = Some(ticket);
+        trace.revision = revision;
+        self.trace(trace);
     }
     pub async fn diagnostic_report(&self) -> Result<serde_json::Value, String> {
         let (tx, rx) = oneshot::channel();
@@ -336,9 +361,8 @@ impl Native {
                 Engine::new(instance, config).with_codex_approval_sync(codex_approval_sync);
             engine.character_forms = character.agent_forms;
             engine.default_form = character.default_form;
-            let mut subscribers: BTreeMap<String, Channel<Projection>> = BTreeMap::new();
-            let mut banter_subscribers: BTreeMap<String, Channel<BanterProjection>> =
-                BTreeMap::new();
+            let mut subscribers = SnapshotSubscriptions::<Projection>::default();
+            let mut banter_subscribers = SnapshotSubscriptions::<BanterProjection>::default();
             let mut last_banter = 0;
             let mut probe_active = false;
             let (probe_done, mut probe_finished) = mpsc::channel(1);
@@ -380,27 +404,31 @@ impl Native {
                             state.trace(trace);
                         },
                         Some(Message::Subscribe(webview, token, callback, reply)) => {
-                            let label = webview.label();
-                            let id = format!("{label}:{token}");
-                            // IPC fallback can replay the same request. A second Channel with
-                            // this callback would reset its index and close it when dropped.
-                            if !subscribers.contains_key(&id) {
-                                subscribers.retain(|old, _| old.split(':').next() != Some(label));
-                                subscribers.insert(id, callback.channel_on(*webview));
-                            }
-                            let _ = reply.send(engine.snapshot());
+                            let label = webview.label().to_owned();
+                            let (ticket, outcome) = subscribers.offer(&label, token, || callback.channel_on(*webview));
+                            state.trace_subscription("projection-subscription", outcome, &label, ticket, None);
+                            let _ = reply.send(());
                         },
-                        Some(Message::Unsubscribe(id))=>{subscribers.remove(&id);},
+                        Some(Message::ConfirmSubscription(label, token, ticket, reply)) => {
+                            let snapshot = subscribers.confirm(&label, &token, ticket).then(|| engine.snapshot());
+                            let outcome = if snapshot.is_some() { "confirmed" } else { "confirmation-rejected" };
+                            state.trace_subscription("projection-subscription", outcome, &label, ticket, snapshot.as_ref().map(|p| p.revision));
+                            let _ = reply.send(snapshot);
+                        },
+                        Some(Message::Unsubscribe(label, token))=>{subscribers.cancel(&label, &token);},
                         Some(Message::BanterSubscribe(webview, token, callback, reply)) => {
-                            let label = webview.label();
-                            let id = format!("{label}:{token}");
-                            if !banter_subscribers.contains_key(&id) {
-                                banter_subscribers.retain(|old, _| old.split(':').next() != Some(label));
-                                banter_subscribers.insert(id, callback.channel_on(*webview));
-                            }
-                            let _ = reply.send(banter.core.snapshot());
+                            let label = webview.label().to_owned();
+                            let (ticket, outcome) = banter_subscribers.offer(&label, token, || callback.channel_on(*webview));
+                            state.trace_subscription("banter-subscription", outcome, &label, ticket, None);
+                            let _ = reply.send(());
                         },
-                        Some(Message::BanterUnsubscribe(id)) => { banter_subscribers.remove(&id); },
+                        Some(Message::ConfirmBanterSubscription(label, token, ticket, reply)) => {
+                            let snapshot = banter_subscribers.confirm(&label, &token, ticket).then(|| banter.core.snapshot());
+                            let outcome = if snapshot.is_some() { "confirmed" } else { "confirmation-rejected" };
+                            state.trace_subscription("banter-subscription", outcome, &label, ticket, snapshot.as_ref().map(|p| p.revision));
+                            let _ = reply.send(snapshot);
+                        },
+                        Some(Message::BanterUnsubscribe(label, token)) => { banter_subscribers.cancel(&label, &token); },
                         Some(Message::BanterGet(reply)) => { let _ = reply.send(banter.core.snapshot()); },
                         Some(Message::BanterRendered(instance, revision)) => { banter.rendered(&instance, revision, now); },
                         Some(Message::BanterStatus(reply)) => { let _ = reply.send(banter.status()); },
@@ -552,8 +580,20 @@ impl Native {
                 engine.set_idle_resting(idle_resting, now);
                 if banter_view.revision != last_banter {
                     last_banter = banter_view.revision;
-                    banter_subscribers
-                        .retain(|_, channel| channel.send(banter_view.clone()).is_ok());
+                    banter_subscribers.publish(
+                        &banter_view,
+                        app.as_ref(),
+                        false,
+                        |window, ticket, outcome| {
+                            state.trace_subscription(
+                                "banter-delivery",
+                                outcome,
+                                window,
+                                ticket,
+                                Some(banter_view.revision),
+                            );
+                        },
+                    );
                 }
                 let p = engine.snapshot();
                 if p.revision != last_broadcast {
@@ -563,23 +603,19 @@ impl Native {
                         .lock()
                         .unwrap()
                         .published(p.revision, received.unwrap_or_else(Instant::now));
-                    subscribers.retain(|id, c| {
-                        if let Some(app) = &app {
-                            if let Some(w) =
-                                app.get_webview_window(id.split(':').next().unwrap_or(""))
-                            {
-                                if !w.is_visible().unwrap_or(false) {
-                                    return true;
-                                }
-                            } else {
-                                return false;
-                            }
-                        }
-                        c.send(p.clone()).is_ok()
-                    });
+                    let active =
+                        subscribers.publish(&p, app.as_ref(), true, |window, ticket, outcome| {
+                            state.trace_subscription(
+                                "projection-delivery",
+                                outcome,
+                                window,
+                                ticket,
+                                Some(p.revision),
+                            );
+                        });
                     let mut trace = PipelineTrace::new("projection", "published");
                     trace.after = Some((&p).into());
-                    trace.subscribers = Some(subscribers.len());
+                    trace.subscribers = Some(active);
                     state.trace(trace);
                 }
             }
@@ -631,12 +667,25 @@ impl Native {
         view: Webview,
         token: String,
         callback: JavaScriptChannelId,
-    ) -> Result<BanterProjection, String> {
+    ) -> Result<(), String> {
         self.banter_call(|tx| Message::BanterSubscribe(Box::new(view), token, callback, tx))
             .await
     }
-    pub async fn banter_unsubscribe(&self, id: String) {
-        let _ = self.tx.send(Message::BanterUnsubscribe(id)).await;
+    pub async fn confirm_banter_subscription(
+        &self,
+        window: String,
+        token: String,
+        ticket: u64,
+    ) -> Result<BanterProjection, String> {
+        self.banter_call(|tx| Message::ConfirmBanterSubscription(window, token, ticket, tx))
+            .await?
+            .ok_or_else(|| "碎碎念订阅确认已失效".into())
+    }
+    pub async fn banter_unsubscribe(&self, window: String, token: String) {
+        let _ = self
+            .tx
+            .send(Message::BanterUnsubscribe(window, token))
+            .await;
     }
     pub async fn banter_projection(&self) -> Result<BanterProjection, String> {
         self.banter_call(Message::BanterGet).await
@@ -689,16 +738,22 @@ impl Native {
         webview: Webview,
         token: String,
         callback: JavaScriptChannelId,
-    ) -> Result<Projection, String> {
-        let (tx, rx) = oneshot::channel();
-        self.tx
-            .send(Message::Subscribe(Box::new(webview), token, callback, tx))
+    ) -> Result<(), String> {
+        self.banter_call(|tx| Message::Subscribe(Box::new(webview), token, callback, tx))
             .await
-            .map_err(|_| "核心已停止")?;
-        rx.await.map_err(|_| "核心已停止".into())
     }
-    pub async fn unsubscribe(&self, id: String) {
-        let _ = self.tx.send(Message::Unsubscribe(id)).await;
+    pub async fn confirm_subscription(
+        &self,
+        window: String,
+        token: String,
+        ticket: u64,
+    ) -> Result<Projection, String> {
+        self.banter_call(|tx| Message::ConfirmSubscription(window, token, ticket, tx))
+            .await?
+            .ok_or_else(|| "状态订阅确认已失效".into())
+    }
+    pub async fn unsubscribe(&self, window: String, token: String) {
+        let _ = self.tx.send(Message::Unsubscribe(window, token)).await;
     }
     pub async fn configure(&self, c: Config) -> Result<Config, String> {
         let verify = c.clone();

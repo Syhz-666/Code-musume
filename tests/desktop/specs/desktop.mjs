@@ -179,6 +179,7 @@ describe("Actual desktop event chain and settings", () => {
       // WebView startup and atlas loading use real time. Keep the model bubble's
       // lifetime under test control while those operations complete.
       await nativeInvoke("e2e_set_clock_paused", { paused: true });
+      const syncAtStart = (await nativeInvoke("get_pipeline_diagnostics")).codexApprovalSync;
       for (const renderer of ["pixi", "dom"]) {
         const session = `codex-banter-${renderer}`;
         await selectWindow("settings");
@@ -189,10 +190,18 @@ describe("Actual desktop event chain and settings", () => {
         await hook(cx, "UserPromptSubmit", {}, session, "id118");
         await pet({ state: "thinking", renderer });
         await browser.waitUntil(() => peer.following(session));
+        const beforeReplay = (await nativeInvoke("get_pipeline_diagnostics")).codexApprovalSync;
         peer.replay(session);
         const bubble = await browser.$('.bubble[data-kind="banter"]');
         await bubble.waitForDisplayed();
         assert.equal(await bubble.getText(), "登录测试过啦。");
+        const afterReplay = (await nativeInvoke("get_pipeline_diagnostics")).codexApprovalSync;
+        assert.equal(
+          afterReplay.messageCapture.progressMessages -
+            beforeReplay.messageCapture.progressMessages,
+          1,
+          `Expected one new progress message for ${renderer}`,
+        );
         const before = await nativeInvoke("get_banter_projection");
         await browser.waitUntil(async () => {
           const { banterPipeline } = await nativeInvoke("get_pipeline_diagnostics");
@@ -244,8 +253,15 @@ describe("Actual desktop event chain and settings", () => {
       );
       const report = await nativeInvoke("get_pipeline_diagnostics");
       assert.equal(report.codexApprovalSync.metrics.lastReceivedVersion, 13);
-      assert.equal(report.codexApprovalSync.metrics.visibleMessages, 2);
-      assert.equal(report.codexApprovalSync.messageCapture.progressMessages, 2);
+      assert.equal(
+        report.codexApprovalSync.metrics.visibleMessages - syncAtStart.metrics.visibleMessages,
+        2,
+      );
+      assert.equal(
+        report.codexApprovalSync.messageCapture.progressMessages -
+          syncAtStart.messageCapture.progressMessages,
+        2,
+      );
       assert(report.codexApprovalSync.metrics.lastVisibleAtUnixMs > 0);
       assert.equal(report.banterOutcome, "总结成功");
       const progressTrace = report.banterPipeline.trace.entries.filter(
@@ -300,11 +316,14 @@ describe("Actual desktop event chain and settings", () => {
           ).some((session) => session.status === "observed"),
         );
         if (renderer === "pixi") {
+          const beforeFinal = (await nativeInvoke("get_pipeline_diagnostics")).codexApprovalSync
+            .messageCapture.finalMessages;
           peer.finishFinalOnly(session);
           await browser.waitUntil(
             async () =>
-              (await nativeInvoke("get_pipeline_diagnostics")).codexApprovalSync.metrics
-                .visibleMessages === 3,
+              (await nativeInvoke("get_pipeline_diagnostics")).codexApprovalSync.messageCapture
+                .finalMessages ===
+              beforeFinal + 1,
           );
         }
         await hook(cx, "Stop", {}, session, "final-turn");
@@ -1608,6 +1627,81 @@ describe("Actual desktop event chain and settings", () => {
     await (await browser.$("button=保存角色选择")).click();
     await pet({ character: "builtin" });
   });
+  it("keeps the current window subscribed when requests from the old page arrive late", async () => {
+    await pet({ state: "idle" });
+    const old = await browser.execute(async () => {
+      const { Channel, invoke } = window.__TAURI__.core;
+      const streams = [];
+      for (const name of ["projection", "banter"]) {
+        let receiveTicket;
+        const offered = new Promise((resolve) => {
+          receiveTicket = resolve;
+        });
+        const channel = new Channel((update) => {
+          if ("ticket" in update) receiveTicket(update.ticket);
+        });
+        const subscriptionId = crypto.randomUUID();
+        await invoke(`subscribe_${name}`, { subscriptionId, onUpdate: channel });
+        const ticket = await offered;
+        await invoke(`confirm_${name}`, { subscriptionId, ticket });
+        streams.push({
+          name,
+          ticket,
+          replay: { subscriptionId, onUpdate: channel.toJSON() },
+          firstOffer: { subscriptionId: crypto.randomUUID(), onUpdate: new Channel().toJSON() },
+        });
+      }
+      return streams;
+    });
+    await browser.refresh();
+    await pet({ state: "idle" });
+    let confirmed;
+    await browser.waitUntil(async () => {
+      const { pipeline } = await nativeInvoke("get_pipeline_diagnostics");
+      confirmed = old.map(({ name, ticket }) =>
+        pipeline.entries.findLast(
+          (e) =>
+            e.stage === `${name}-subscription` &&
+            e.outcome === "confirmed" &&
+            e.displayWindow === "pet" &&
+            e.subscriptionTicket > ticket,
+        ),
+      );
+      return confirmed.every(Boolean);
+    });
+    for (const { name, replay, firstOffer, ticket } of old) {
+      // Even a first request issued by the discarded page may arrive after its replacement.
+      await nativeInvoke(`subscribe_${name}`, firstOffer);
+      await nativeInvoke(`subscribe_${name}`, replay);
+      await assert.rejects(() =>
+        nativeInvoke(`confirm_${name}`, { subscriptionId: replay.subscriptionId, ticket }),
+      );
+      await nativeInvoke(`unsubscribe_${name}`, { subscriptionId: replay.subscriptionId });
+    }
+    const session = "late-subscription";
+    const turn = "stay-current";
+    await hook(cx, "UserPromptSubmit", {}, session, turn);
+    await pet({ state: "thinking", agent: cx });
+    await hook(cx, "PreToolUse", { tool_use_id: "read" }, session, turn);
+    await pet({ state: "working", agent: cx });
+    const { pipeline, projection } = await nativeInvoke("get_pipeline_diagnostics");
+    const delivery = pipeline.entries.findLast(
+      (e) => e.stage === "projection-delivery" && e.displayWindow === "pet",
+    );
+    assert.equal(delivery.outcome, "queued");
+    assert.equal(delivery.subscriptionTicket, confirmed[0].subscriptionTicket);
+    assert.equal(delivery.revision, projection.revision);
+    await browser.waitUntil(
+      async () =>
+        (await nativeInvoke("get_pipeline_diagnostics")).renderReceipt?.revision ===
+        projection.revision,
+    );
+    assert(
+      pipeline.entries.some(
+        (e) => e.stage === "banter-subscription" && e.outcome === "confirmation-rejected",
+      ),
+    );
+  });
   it("recovers the latest snapshot after hiding, refreshing and recreating the pet window", async () => {
     await tab("使用偏好");
     // Leave an explicitly saved DOM preference for the separate restart check.
@@ -1640,14 +1734,23 @@ describe("Actual desktop event chain and settings", () => {
     // Simulate Tauri resending a subscribe command after its first IPC response is lost.
     const initialRevision = await browser.execute(async () => {
       const { Channel, invoke } = window.__TAURI__.core;
+      let receiveTicket;
+      const offered = new Promise((resolve) => {
+        receiveTicket = resolve;
+      });
       const args = {
         subscriptionId: crypto.randomUUID(),
-        onUpdate: new Channel((projection) => {
-          window.projectionReplayProbe.latest = projection;
+        onUpdate: new Channel((update) => {
+          if ("ticket" in update) receiveTicket(update.ticket);
+          else window.projectionReplayProbe.latest = update.snapshot;
         }),
       };
       window.projectionReplayProbe = { args, latest: null };
-      return (await invoke("subscribe_projection", args)).revision;
+      await invoke("subscribe_projection", args);
+      const ticket = await offered;
+      window.projectionReplayProbe.ticket = ticket;
+      return (await invoke("confirm_projection", { subscriptionId: args.subscriptionId, ticket }))
+        .revision;
     });
     await hook(cx, "Stop");
     await browser.waitUntil(async () =>
@@ -1657,8 +1760,11 @@ describe("Actual desktop event chain and settings", () => {
       }, initialRevision),
     );
     const replayRevision = await browser.execute(async () => {
-      const { args } = window.projectionReplayProbe;
-      return (await window.__TAURI__.core.invoke("subscribe_projection", args)).revision;
+      const { args, ticket } = window.projectionReplayProbe;
+      const { invoke } = window.__TAURI__.core;
+      await invoke("subscribe_projection", args);
+      return (await invoke("confirm_projection", { subscriptionId: args.subscriptionId, ticket }))
+        .revision;
     });
     await nativeInvoke("reset_sessions");
     await browser.waitUntil(
