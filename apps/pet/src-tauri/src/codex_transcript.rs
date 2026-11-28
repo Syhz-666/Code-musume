@@ -120,30 +120,53 @@ impl Transcript {
         let len = file.metadata().map_err(|_| "transcript-read")?.len();
         self.verify_header(file)?;
         // Inspect only framing and turn boundaries before EOF. Existing text is never replayed.
-        let start = len.saturating_sub(MAX_LINE as u64);
-        file.seek(SeekFrom::Start(start))
-            .map_err(|_| "transcript-read")?;
-        let mut bytes = Vec::new();
-        file.take(len - start)
-            .read_to_end(&mut bytes)
-            .map_err(|_| "transcript-read")?;
+        let mut end = len;
         self.turn_matched = false;
-        for line in bytes
-            .split_inclusive(|b| *b == b'\n')
-            .skip(usize::from(start > 0))
-        {
-            if line.ends_with(b"\n") {
-                if let Ok(row) = serde_json::from_slice(&line[..line.len() - 1]) {
-                    if let Some(matches) = turn_boundary(&row, &self.turn) {
-                        self.turn_matched = matches;
-                    }
-                }
+        // Search backwards for the newest complete boundary. Keep at most two blocks
+        // in memory so a large tool result does not hide the turn or allocate its size.
+        let mut suffix = Vec::new();
+        loop {
+            let start = end.saturating_sub(MAX_LINE as u64);
+            file.seek(SeekFrom::Start(start))
+                .map_err(|_| "transcript-read")?;
+            let mut bytes = vec![0; (end - start) as usize];
+            file.read_exact(&mut bytes).map_err(|_| "transcript-read")?;
+            if end == len {
+                self.anchor = bytes[bytes.len().saturating_sub(ANCHOR)..].to_vec();
+                self.skip_line = bytes.last().is_some_and(|b| *b != b'\n');
             }
+            bytes.append(&mut suffix);
+            let first = bytes.iter().position(|b| *b == b'\n');
+            let complete_start = if start == 0 {
+                0
+            } else {
+                first.map_or(bytes.len(), |i| i + 1)
+            };
+            if let Some(matches) = bytes[complete_start..]
+                .split_inclusive(|b| *b == b'\n')
+                .rev()
+                .find_map(|line| {
+                    if !line.ends_with(b"\n") || line.len() > MAX_LINE {
+                        return None;
+                    }
+                    let row = serde_json::from_slice(line).ok()?;
+                    turn_boundary(&row, &self.turn)
+                })
+            {
+                self.turn_matched = matches;
+                break;
+            }
+            if start == 0 || len - start >= MAX_BACKLOG {
+                break;
+            }
+            // Only the first partial row can straddle the next block boundary.
+            suffix = first
+                .filter(|i| *i < MAX_LINE)
+                .map_or_else(Vec::new, |i| bytes[..=i].to_vec());
+            end = start;
         }
-        self.offset = start + bytes.len() as u64;
-        self.anchor = bytes[bytes.len().saturating_sub(ANCHOR)..].to_vec();
+        self.offset = len;
         self.partial.clear();
-        self.skip_line = bytes.last().is_some_and(|b| *b != b'\n');
         Ok(())
     }
 
@@ -388,6 +411,25 @@ mod tests {
         );
         fixture.append(&format!("{}\n", rows[3]));
         assert!(tail.read().unwrap().0.is_empty());
+    }
+
+    #[test]
+    fn attaches_mid_turn_after_large_output_without_replaying_old_messages() {
+        let rows: Vec<_> = ROWS.lines().collect();
+        let large = json!({"type":"response_item","payload":{"type":"function_call_output","output":"x".repeat(MAX_LINE * 3)}});
+        let fixture = Fixture::new(&format!("{}\n{large}\n", rows[..4].join("\n")));
+        let mut tail = fixture.open(TURN).unwrap();
+        assert!(tail.read().unwrap().0.is_empty());
+        fixture.append(&format!("{}\n{}\n", rows[3], rows[6]));
+        let (messages, _) = tail.read().unwrap();
+        assert!(
+            matches!(&messages[..], [p, f] if p.kind == BanterKind::Progress && f.kind == BanterKind::Completion)
+        );
+
+        fixture.append(&format!("{}\n{large}\n", rows[7]));
+        let mut ended = fixture.open(TURN).unwrap();
+        fixture.append(&format!("{}\n", rows[3]));
+        assert!(ended.read().unwrap().0.is_empty());
     }
 
     #[test]
