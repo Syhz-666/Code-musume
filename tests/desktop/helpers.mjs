@@ -31,6 +31,34 @@ export async function nativeInvoke(command, args = {}) {
 function isNavigationTimeout(error) {
   return /Script execution timed out/i.test(String(error));
 }
+export async function refreshWindow(label) {
+  await browser.waitUntil(async () => (await browser.getWindowHandles()).includes(label));
+  await browser.switchToWindow(label);
+  // Identify the outgoing document without requiring its application to be ready.
+  const previous = await browser.execute(() => performance.timeOrigin);
+  await browser.refresh();
+  await browser.waitUntil(
+    async () => {
+      try {
+        await browser.switchToWindow(label);
+        return await browser.execute(
+          (origin, target) =>
+            performance.timeOrigin !== origin &&
+            window.__TAURI_INTERNALS__?.metadata?.currentWindow?.label === target &&
+            (target === "pet"
+              ? !!document.querySelector("#app")?.dataset.instance
+              : !!document.querySelector('[data-testid="settings"]')),
+          previous,
+          label,
+        );
+      } catch (error) {
+        if (isNavigationTimeout(error)) return false;
+        throw error;
+      }
+    },
+    { timeoutMsg: `Refreshed window ${label} did not initialize a new document` },
+  );
+}
 export async function selectWindow(label, { prepare = true } = {}) {
   await browser.waitUntil(async () => (await browser.getWindowHandles()).includes(label));
   await browser.switchToWindow(label);

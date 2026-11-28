@@ -13,6 +13,7 @@ import {
   manualPet,
   nativeInvoke,
   pet,
+  refreshWindow,
   runDir,
   screenshot,
   selectWindow,
@@ -70,9 +71,8 @@ describe("Actual desktop event chain and settings", () => {
     await nativeInvoke("set_animation_preview_enabled", { enabled: false });
     await nativeInvoke("set_animation_preview_state", { state: null });
     await nativeInvoke("reset_sessions");
-    await browser.refresh();
-    await selectWindow("pet");
-    await browser.refresh();
+    await refreshWindow("settings");
+    await refreshWindow("pet");
     await pet({ state: "idle", animationMode: "real", renderer: initialConfig.renderer });
     await selectWindow("settings");
   });
