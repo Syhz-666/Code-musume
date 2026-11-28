@@ -276,7 +276,7 @@ fn requires_a_fresh_local_snapshot_after_a_gap_or_owner_loss() {
 }
 
 #[test]
-fn unknown_request_methods_count_as_manual_without_keeping_their_names() {
+fn unknown_request_methods_do_not_imply_human_approval() {
     let mut observer = Observer::default();
     observer.streams.insert("local-thread".into(), None);
     assert_change(
@@ -285,7 +285,7 @@ fn unknown_request_methods_count_as_manual_without_keeping_their_names() {
             1,
             json!({"requests":[{"method":"item/secretNewThing/requestApproval"}],"turns":[]}),
         )),
-        Some(state(1, 0, 0)),
+        Some(state(0, 0, 0)),
     );
     let stored = &observer.streams["local-thread"].as_ref().unwrap().state;
     assert!(!stored.to_string().contains("secretNewThing"));
@@ -444,9 +444,9 @@ fn check_pipe_approval_lifecycle(version: u32) {
             let mut engine = Engine::new("test".into(), Config::default()).with_codex_approval_sync(true);
             engine.ingest(hook("UserPromptSubmit"), 0);
             engine.ingest(hook("PermissionRequest"), 1);
-            // Before the desktop reports this session, the hook request is the only evidence.
-            // The first snapshot below was taken after it and supersedes it.
-            assert_eq!(engine.snapshot().state, DisplayState::WaitingPermission);
+            // The hook cannot identify the reviewer.
+            assert_eq!(engine.snapshot().state, DisplayState::Thinking);
+            assert_eq!(engine.snapshot().pending_count, 0);
             let turn = "turn:private/session~key";
             let sequence = [
                 (snapshot("local-thread", 1, json!({

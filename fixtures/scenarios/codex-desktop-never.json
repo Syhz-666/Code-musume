@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "id": "codex-desktop-never",
-  "description": "开启桌面同步但从未收到该会话快照时，hook 请求照常显示等待。",
+  "description": "首次同步前的权限 hook 只记入诊断。",
   "provenance": "synthetic",
   "sourceVersions": {
     "codex": "0.165.0-alpha.1.2"
@@ -47,13 +47,13 @@
         }
       },
       "expect": {
-        "state": "waiting-permission",
+        "state": "thinking",
         "certainty": "observed",
         "dominantAgent": "codex",
-        "pendingCount": 1,
+        "pendingCount": 0,
         "formId": "codex"
       },
-      "diagnostic": "applied"
+      "diagnostic": "awaiting-desktop-approval-state"
     },
     {
       "atMs": 2,

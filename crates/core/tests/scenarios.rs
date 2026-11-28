@@ -337,8 +337,8 @@ fn codex_desktop_approvals_do_not_clear_other_sources_or_create_sessions() {
         ),
         3,
     );
-    // Before any desktop snapshot the Codex hook request counts as fallback evidence.
-    assert_eq!(e.snapshot().pending_count, 2);
+    // Only the Claude request is confirmed before the first Codex snapshot.
+    assert_eq!(e.snapshot().pending_count, 1);
     e.update_codex_approvals("same".into(), Some(pending), 4);
     // One Claude request plus the desktop's count for the Codex session.
     assert_eq!(e.snapshot().pending_count, 2);
@@ -371,7 +371,7 @@ fn same_codex_session_counts_desktop_and_hook_once() {
         event(Agent::Codex, "PermissionRequest", "s", "t", identity, "2"),
         1,
     );
-    assert_eq!(e.snapshot().pending_count, 1);
+    assert_eq!(e.snapshot().pending_count, 0);
     let one = CodexApprovals {
         manual: 1,
         human_input: 0,

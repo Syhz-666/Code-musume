@@ -180,9 +180,6 @@ impl Shape {
             (Self::Text, Some(s)) if s.len() <= 16_000 => value.clone(),
             (Self::Text, Some(_)) => Value::String("…".repeat(4001)),
             (Self::Completion, _) if value.is_u64() => value.clone(),
-            // A request method added by a newer desktop still means someone has to act.
-            // Count it without keeping its name.
-            (Self::Method, Some(method)) if !method.is_empty() => Value::String("other".into()),
             (Self::Blocking, _) if value.is_boolean() => value.clone(),
             _ => Value::Null,
         }

@@ -47,12 +47,13 @@
         }
       },
       "expect": {
-        "state": "waiting-permission",
+        "state": "thinking",
         "certainty": "observed",
         "dominantAgent": "codex",
-        "pendingCount": 1,
+        "pendingCount": 0,
         "formId": "codex"
-      }
+      },
+      "diagnostic": "awaiting-desktop-approval-state"
     },
     {
       "atMs": 2,

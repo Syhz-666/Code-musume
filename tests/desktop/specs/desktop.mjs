@@ -1168,11 +1168,13 @@ describe("Actual desktop event chain and settings", () => {
     await pet({ state: "working", agent: cc });
     assert.equal((await health()).projection.activeSessions, 2);
     await hook(cx, "PermissionRequest", { tool_use_id: "b" });
-    await pet({ state: "waiting-permission", agent: cx, form: "codex", pending: 1 });
-    await hook(cc, "Stop");
-    await pet({ state: "waiting-permission", agent: cx, pending: 1 });
-    await hook(cx, "Interrupt");
-    await pet({ state: "done", agent: cc, pending: 0 });
+    await pet({ state: "working", agent: cc, pending: 0 });
+    await hook(cc, "PermissionRequest", { tool_use_id: "a" });
+    await pet({ state: "waiting-permission", agent: cc, pending: 1 });
+    await hook(cx, "Stop");
+    await pet({ state: "waiting-permission", agent: cc, pending: 1 });
+    await hook(cc, "PostToolUse", { tool_use_id: "a" });
+    await pet({ state: "done", agent: cx, pending: 0 });
     await nativeInvoke("reset_sessions");
     await hook(cc, "PreToolUse", { tool_use_id: "a" });
     await hook(cx, "PreToolUse", { tool_use_id: "b" });
@@ -1709,7 +1711,7 @@ describe("Actual desktop event chain and settings", () => {
     const hidden = await browser.$('[data-testid="preference-userHidden"]');
     await hidden.click();
     await (await browser.$("button=保存使用偏好")).click();
-    await hook(cx, "PermissionRequest", { tool_use_id: "hidden" });
+    await hook(cc, "PermissionRequest", { tool_use_id: "hidden" });
     await hidden.click();
     await (await browser.$("button=保存使用偏好")).click();
     await pet({ state: "waiting-permission", pending: 1 });
@@ -1752,7 +1754,7 @@ describe("Actual desktop event chain and settings", () => {
       return (await invoke("confirm_projection", { subscriptionId: args.subscriptionId, ticket }))
         .revision;
     });
-    await hook(cx, "Stop");
+    await hook(cc, "Stop");
     await browser.waitUntil(async () =>
       browser.execute((revision) => {
         const latest = window.projectionReplayProbe.latest;

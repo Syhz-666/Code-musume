@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "id": "codex-desktop-later-hook",
-  "description": "桌面报告无等待后才到达的 hook 请求被保留，桌面失联时可以接管。",
+  "description": "桌面报告无等待后，普通权限 hook 在断线时也不会变成人工等待。",
   "provenance": "synthetic",
   "sourceVersions": {
     "codex": "0.165.0-alpha.1.2"
@@ -70,7 +70,7 @@
         "pendingCount": 0,
         "formId": "codex"
       },
-      "diagnostic": "applied"
+      "diagnostic": "awaiting-desktop-approval-state"
     },
     {
       "atMs": 3,
@@ -79,10 +79,10 @@
         "session": "session"
       },
       "expect": {
-        "state": "waiting-permission",
-        "certainty": "stale",
+        "state": "thinking",
+        "certainty": "observed",
         "dominantAgent": "codex",
-        "pendingCount": 1,
+        "pendingCount": 0,
         "formId": "codex"
       }
     }

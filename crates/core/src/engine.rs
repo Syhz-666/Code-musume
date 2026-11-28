@@ -88,7 +88,7 @@ struct Session {
     background_last: u64,
     hook_loss: Option<HookLoss>,
     codex_approvals: Option<(CodexApprovals, u64)>,
-    /// The desktop once reported this session and then stopped; hook evidence is a fallback.
+    /// The desktop previously reported this session, but its approval state is now unknown.
     approval_degraded: bool,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
@@ -119,8 +119,7 @@ impl Session {
                 actor.active || actor.compacting || actor.tools.values().any(|tool| !tool.terminal)
             })
     }
-    // Hook requests and a desktop snapshot describe the same approvals. While a snapshot
-    // exists it is authoritative; hook requests stay recorded so they can take over on loss.
+    // A desktop snapshot supplies Codex human waits. Hook-only adapters track actor requests.
     fn pending(&self) -> usize {
         match self.codex_approvals {
             Some((state, _)) => state.pending(),
@@ -432,10 +431,6 @@ impl Engine {
             return;
         };
         if next.is_some() {
-            // The desktop observed this session after these hook requests were recorded.
-            for actor in session.actors.values_mut() {
-                actor.pending.retain(|p| p.since > now);
-            }
             session.approval_degraded = false;
         } else if session.codex_approvals.is_some() {
             session.approval_degraded = true;
@@ -550,7 +545,15 @@ impl Engine {
                     })
                     .flatten()
                     .filter(|turn| e.turn.as_ref() == Some(turn));
-                let outcome = Self::apply(s, &e, now);
+                let outcome = if self.codex_approval_sync
+                    && e.agent == Agent::Codex
+                    && e.kind == Kind::Permission
+                {
+                    // The hook fires before Codex chooses automatic or human review.
+                    "awaiting-desktop-approval-state"
+                } else {
+                    Self::apply(s, &e, now)
+                };
                 if outcome == "applied" {
                     self.last_activity = now;
                     if e.kind == Kind::Prompt && e.actor.is_none() {

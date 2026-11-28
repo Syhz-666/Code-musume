@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "id": "codex-desktop-handoff",
-  "description": "桌面报告等待后 hook 请求仍被记录；桌面失联时由 hook 接管，并标记为较旧。",
+  "description": "明确的人工请求显示等待；断线后不使用普通权限 hook 推断等待。",
   "provenance": "synthetic",
   "sourceVersions": {
     "codex": "0.165.0-alpha.1.2"
@@ -70,7 +70,7 @@
         "pendingCount": 1,
         "formId": "codex"
       },
-      "diagnostic": "applied"
+      "diagnostic": "awaiting-desktop-approval-state"
     },
     {
       "atMs": 3,
@@ -79,10 +79,10 @@
         "session": "session"
       },
       "expect": {
-        "state": "waiting-permission",
-        "certainty": "stale",
+        "state": "thinking",
+        "certainty": "observed",
         "dominantAgent": "codex",
-        "pendingCount": 1,
+        "pendingCount": 0,
         "formId": "codex"
       }
     },

@@ -54,7 +54,7 @@ function codexSyncText(sync: CodexSync) {
   const metrics = sync.metrics;
   const state = sessions.length ? `已同步 ${observed}/${sessions.length}` : "尚无会话";
   const details = [state];
-  if (sessions.length > observed) details.push("未同步会话的等待提示使用 hook 推断");
+  if (sessions.length > observed) details.push("未同步会话的人工审批状态未知");
   if (metrics) {
     details.push(
       `收到的协议 ${metrics.lastReceivedVersion ?? "暂无"}（支持 ${metrics.supportedVersions.join(" / ")}）`,
